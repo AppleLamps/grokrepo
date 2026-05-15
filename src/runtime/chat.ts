@@ -1,5 +1,6 @@
 import type { GrokProvider, GrokUsage } from "../providers/grok.js";
 import type { Session } from "./session.js";
+import type { ContextBuilder } from "../context/index.js";
 import { createPatchPreview } from "../editing/engine.js";
 import { parseToolArguments } from "../tools/args.js";
 import type {
@@ -47,6 +48,7 @@ export interface RunChatTurnOptions {
   onDelta: (delta: string) => void;
   onToolEvent?: (event: ToolRuntimeEvent) => void;
   requestApproval: (request: ToolApprovalRequest) => Promise<boolean | ToolApprovalDecision>;
+  contextBuilder?: ContextBuilder;
   imageProvider?: ImageProviderLike;
   searchProvider?: SearchProviderLike;
   maxToolRounds?: number;
@@ -55,13 +57,14 @@ export interface RunChatTurnOptions {
 export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurnResult> {
   const maxToolRounds = options.maxToolRounds ?? 6;
   let usage: GrokUsage | undefined;
+  const contextPrompt = await buildTurnContext(options);
 
   for (let round = 0; round < maxToolRounds; round += 1) {
     let content = "";
     let toolCalls: ToolCallRequest[] = [];
 
     for await (const event of options.provider.streamChat(
-      options.session.toChatMessages(),
+      options.session.toChatMessages(contextPrompt),
       options.registry.toChatCompletionTools()
     )) {
       if (event.type === "content" && event.content) {
@@ -102,6 +105,24 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
     content,
     usage
   };
+}
+
+async function buildTurnContext(options: RunChatTurnOptions): Promise<string | undefined> {
+  if (!options.contextBuilder) {
+    return undefined;
+  }
+
+  const latestUserMessage = [...options.session.listMessages()]
+    .reverse()
+    .find((message) => message.role === "user")
+    ?.content;
+
+  if (!latestUserMessage) {
+    return undefined;
+  }
+
+  const context = await options.contextBuilder.buildContext(options.cwd, latestUserMessage);
+  return context.prompt;
 }
 
 async function executeToolCall(

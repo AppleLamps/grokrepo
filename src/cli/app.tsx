@@ -1,6 +1,7 @@
 import { Box, Text, useApp, useInput } from "ink";
 import { useMemo, useState } from "react";
 
+import type { ContextBuilder } from "../context/index.js";
 import { GrokProvider, type GrokUsage } from "../providers/grok.js";
 import type { ImageProvider } from "../providers/images.js";
 import type { SearchProvider } from "../providers/search.js";
@@ -14,6 +15,7 @@ import { ChatOutput } from "./output.js";
 
 interface AppProps {
   config: AppConfig;
+  contextBuilder: ContextBuilder;
   provider: GrokProvider;
   imageProvider: ImageProvider;
   registry: ToolRegistry;
@@ -27,7 +29,7 @@ interface PendingApproval {
   selectedFiles: string[];
 }
 
-export function App({ config, provider, imageProvider, registry, searchProvider, session }: AppProps) {
+export function App({ config, contextBuilder, provider, imageProvider, registry, searchProvider, session }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<SessionMessage[]>([...session.listMessages()]);
   const [toolEvents, setToolEvents] = useState<ToolRuntimeEvent[]>([]);
@@ -137,6 +139,7 @@ export function App({ config, provider, imageProvider, registry, searchProvider,
       const result = await runChatTurn({
         session,
         provider,
+        contextBuilder,
         imageProvider,
         registry,
         searchProvider,
@@ -179,7 +182,7 @@ export function App({ config, provider, imageProvider, registry, searchProvider,
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text color="cyan">GrokCode</Text>
-      <Text color="gray">Phase 5 image runtime, {status}. Type /exit to quit.</Text>
+      <Text color="gray">Phase 6 context runtime, {status}. Type /exit to quit.</Text>
       <Box marginTop={1} flexDirection="column">
         <ChatOutput
           messages={messages}

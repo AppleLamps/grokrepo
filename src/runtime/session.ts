@@ -60,8 +60,8 @@ export class Session {
     return this.addMessage("tool", content, { toolCallId });
   }
 
-  toChatMessages(): ChatCompletionMessageParam[] {
-    return this.messages.map((message) => {
+  toChatMessages(contextPrompt?: string): ChatCompletionMessageParam[] {
+    const messages: ChatCompletionMessageParam[] = this.messages.map((message): ChatCompletionMessageParam => {
       if (message.role === "tool") {
         return {
           role: "tool",
@@ -75,7 +75,7 @@ export class Session {
           role: "assistant",
           content: message.content.length > 0 ? message.content : null,
           tool_calls: toAssistantToolCalls(message.toolCalls)
-        };
+        } as ChatCompletionMessageParam;
       }
 
       return {
@@ -83,6 +83,26 @@ export class Session {
         content: message.content
       };
     });
+
+    if (!contextPrompt) {
+      return messages;
+    }
+
+    const systemIndex = messages.findIndex((message) => message.role === "system");
+    const contextMessage: ChatCompletionMessageParam = {
+      role: "system",
+      content: contextPrompt
+    };
+
+    if (systemIndex < 0) {
+      return [contextMessage, ...messages];
+    }
+
+    return [
+      ...messages.slice(0, systemIndex + 1),
+      contextMessage,
+      ...messages.slice(systemIndex + 1)
+    ];
   }
 
   serialize(): SerializedSession {

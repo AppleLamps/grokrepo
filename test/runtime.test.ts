@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 
+import type { ContextBuilder } from "../src/context/index.js";
 import type { GrokStreamDelta } from "../src/providers/grok.js";
 import { runChatTurn } from "../src/runtime/chat.js";
 import { Session } from "../src/runtime/session.js";
@@ -348,6 +349,63 @@ test("image_generate approval executes once and final response continues", async
   assert.match(session.listMessages().find((message) => message.role === "tool")?.content ?? "", /generated image/);
 });
 
+test("context prompt is injected and not persisted in session", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const contextBuilder = createContextBuilder("repo summary");
+  const provider = new ScriptedProvider([[{ type: "content", content: "context used" }]]);
+  const session = new Session();
+  session.addUserMessage("what kind of project is this?");
+
+  await runChatTurn({
+    session,
+    provider,
+    registry,
+    contextBuilder,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  assert.equal(provider.messages[0]?.[1]?.role, "system");
+  assert.match(String(provider.messages[0]?.[1]?.content), /repo summary/);
+  assert.equal(session.listMessages().some((message) => message.content.includes("repo summary")), false);
+});
+
+test("tool loop behavior remains unchanged with context enabled", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const contextBuilder = createContextBuilder("repo summary");
+  let executed = false;
+
+  registry.register(createTool("read_test", "passive", async () => {
+    executed = true;
+    return toolSuccess("read_test", { value: "ok" });
+  }));
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "read_test", arguments: "{}" }] }],
+    [{ type: "content", content: "final" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("use the tool");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    contextBuilder,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  assert.equal(executed, true);
+  assert.equal(result.content, "final");
+  assert.equal(provider.messages.length, 2);
+  assert.equal(provider.messages.every((messages) => String(messages[1]?.content).includes("repo summary")), true);
+});
+
 function createTool(
   name: string,
   permission: "passive" | "active",
@@ -403,6 +461,19 @@ function createImageProvider(): ImageProviderLike {
         summary: "image result",
         source: { type: "url" }
       });
+    }
+  };
+}
+
+function createContextBuilder(prompt: string): ContextBuilder {
+  return {
+    async buildContext() {
+      return {
+        prompt,
+        items: [],
+        estimatedTokens: 1,
+        truncated: false
+      };
     }
   };
 }

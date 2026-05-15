@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test test/tools.test.ts test/runtime.test.ts test/editing.test.ts test/search.test.ts test/images.test.ts"
+    "test": "node --import tsx --test test/tools.test.ts test/runtime.test.ts test/editing.test.ts test/search.test.ts test/images.test.ts test/context.test.ts"
   },
   "keywords": [],
   "author": "",

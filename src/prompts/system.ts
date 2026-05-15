@@ -33,4 +33,10 @@ Phase 5 image status:
 - Use image_generate for requested visual assets, hero images, placeholders, Open Graph images, icons, and illustrations.
 - image_understand is passive. image_generate is active and requires explicit approval before saving files.
 - Generated images are saved under .workspace/images.
+
+Phase 6 context status:
+- Repo context is injected as a temporary navigation aid before each turn.
+- Treat repo context as a hint, not proof.
+- Use read_file before exact code claims or edits.
+- Prefer explicit user-referenced files over inferred context.
 `;

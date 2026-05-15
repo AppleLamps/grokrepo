@@ -5,6 +5,7 @@ import { render } from "ink";
 import React from "react";
 
 import { App } from "./cli/app.js";
+import { DefaultContextBuilder } from "./context/index.js";
 import { GrokProvider } from "./providers/grok.js";
 import { ImageProvider } from "./providers/images.js";
 import { SearchProvider } from "./providers/search.js";
@@ -17,10 +18,13 @@ async function main(): Promise<void> {
   const provider = new GrokProvider(config);
   const imageProvider = new ImageProvider(config);
   const searchProvider = new SearchProvider(config);
+  const contextBuilder = new DefaultContextBuilder();
   const session = new Session();
   const registry = createDefaultToolRegistry();
 
-  const instance = render(React.createElement(App, { config, provider, imageProvider, registry, searchProvider, session }));
+  const instance = render(
+    React.createElement(App, { config, contextBuilder, provider, imageProvider, registry, searchProvider, session })
+  );
 
   const shutdown = (): void => {
     instance.unmount();
