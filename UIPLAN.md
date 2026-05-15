@@ -20,7 +20,7 @@ Create a focused Phase 7 UI/UX pass for the Ink terminal interface. The goal is 
 - [x] Add debug log writing under `.workspace/logs/grokcode-debug.log` when `GROKCODE_DEBUG` is enabled.
 - [x] Add `/retry` command and visible retry hint after errors.
 - [x] Add command history navigation with up/down arrows.
-- [ ] Continue polish on richer debug-log viewing and full readline-style cursor movement.
+- [x] Continue polish on richer debug-log viewing and full readline-style cursor movement.
 
 ## Acceptance Criteria
 - [x] The app remains terminal-native and dense.

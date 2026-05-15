@@ -1,10 +1,21 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface DebugLogEntry {
   timestamp: string;
   event: string;
   data?: unknown;
+}
+
+export interface DebugLogViewEntry {
+  timestamp: string;
+  event: string;
+  data?: unknown;
+  raw?: string;
+}
+
+export function debugLogPath(cwd: string): string {
+  return path.join(cwd, ".workspace", "logs", "grokcode-debug.log");
 }
 
 export function debugLogLine(entry: DebugLogEntry): string {
@@ -23,10 +34,44 @@ export async function writeDebugLog(cwd: string, enabled: boolean | undefined, e
   const logDirectory = path.join(cwd, ".workspace", "logs");
   await mkdir(logDirectory, { recursive: true });
   await appendFile(
-    path.join(logDirectory, "grokcode-debug.log"),
+    debugLogPath(cwd),
     debugLogLine({ timestamp: new Date().toISOString(), event, data }),
     "utf8"
   );
+}
+
+export async function readDebugLogTail(cwd: string, maxLines = 8): Promise<DebugLogViewEntry[]> {
+  let raw: string;
+
+  try {
+    raw = await readFile(debugLogPath(cwd), "utf8");
+  } catch {
+    return [];
+  }
+
+  return raw
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(-maxLines)
+    .map((line) => parseDebugLogLine(line));
+}
+
+function parseDebugLogLine(line: string): DebugLogViewEntry {
+  try {
+    const parsed = JSON.parse(line) as Partial<DebugLogViewEntry>;
+
+    return {
+      timestamp: typeof parsed.timestamp === "string" ? parsed.timestamp : "unknown",
+      event: typeof parsed.event === "string" ? parsed.event : "unknown",
+      ...(parsed.data !== undefined ? { data: parsed.data } : {})
+    };
+  } catch {
+    return {
+      timestamp: "invalid",
+      event: "invalid_json",
+      raw: line
+    };
+  }
 }
 
 function redactSecrets(value: unknown): unknown {

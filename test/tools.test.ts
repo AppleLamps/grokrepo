@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { createDefaultToolRegistry } from "../src/tools/index.js";
+import { resolveWorkspacePath } from "../src/tools/path.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 
 test("default registry exposes Phase 2 tools with expected permissions", () => {
@@ -64,6 +65,102 @@ test("read_file validates required arguments", async () => {
   assert.equal(result.error?.code, "invalid_arguments");
 });
 
+test("list_files returns directory entries and metadata", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
+  await mkdir(path.join(cwd, "src"), { recursive: true });
+  await writeFile(path.join(cwd, "src", "index.ts"), "export {};\n", "utf8");
+  const tool = createDefaultToolRegistry().get("list_files");
+  assert.ok(tool);
+
+  const result = await tool.execute({ path: "src" }, { cwd });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.output, {
+    path: "src",
+    entries: [
+      {
+        name: "index.ts",
+        path: "src/index.ts",
+        type: "file",
+        size: 11
+      }
+    ]
+  });
+});
+
+test("list_files returns structured failures for invalid paths", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
+  const tool = createDefaultToolRegistry().get("list_files");
+  assert.ok(tool);
+
+  const outside = await tool.execute({ path: "../outside" }, { cwd });
+  const missing = await tool.execute({ path: "missing" }, { cwd });
+
+  assert.equal(outside.ok, false);
+  assert.equal(outside.error?.code, "path_outside_workspace");
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error?.code, "list_failed");
+});
+
+test("grep finds matches and returns no-match results", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
+  await mkdir(path.join(cwd, "src"), { recursive: true });
+  await writeFile(path.join(cwd, "src", "a.txt"), "alpha\nbeta\n", "utf8");
+  await writeFile(path.join(cwd, "src", "b.txt"), "gamma\n", "utf8");
+  const tool = createDefaultToolRegistry().get("grep");
+  assert.ok(tool);
+
+  const matchResult = await tool.execute({ query: "beta", path: "src" }, { cwd });
+  const emptyResult = await tool.execute({ query: "delta", path: "src" }, { cwd });
+
+  assert.equal(matchResult.ok, true);
+  assert.deepEqual(matchResult.output, {
+    matches: [{ path: "src/a.txt", line: 2, column: 1, text: "beta" }],
+    truncated: false
+  });
+  assert.equal(emptyResult.ok, true);
+  assert.deepEqual(emptyResult.output, { matches: [], truncated: false });
+});
+
+test("grep validates required query argument", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
+  const tool = createDefaultToolRegistry().get("grep");
+  assert.ok(tool);
+
+  const result = await tool.execute({ path: "." }, { cwd });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error?.code, "invalid_arguments");
+});
+
+test("grep falls back to Node search and skips ignored directories when rg is unavailable", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
+  await mkdir(path.join(cwd, "src"), { recursive: true });
+  await mkdir(path.join(cwd, ".git"), { recursive: true });
+  await mkdir(path.join(cwd, "node_modules", "pkg"), { recursive: true });
+  await mkdir(path.join(cwd, "dist"), { recursive: true });
+  await writeFile(path.join(cwd, "src", "a.txt"), "needle\n", "utf8");
+  await writeFile(path.join(cwd, ".git", "hidden.txt"), "needle\n", "utf8");
+  await writeFile(path.join(cwd, "node_modules", "pkg", "hidden.txt"), "needle\n", "utf8");
+  await writeFile(path.join(cwd, "dist", "hidden.txt"), "needle\n", "utf8");
+  const tool = createDefaultToolRegistry().get("grep");
+  assert.ok(tool);
+  const originalPath = process.env.PATH;
+
+  try {
+    process.env.PATH = "";
+    const result = await tool.execute({ query: "needle", path: "." }, { cwd });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.output, {
+      matches: [{ path: "src/a.txt", line: 1, column: 1, text: "needle" }],
+      truncated: false
+    });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
 test("write_file performs guarded workspace writes", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
   const tool = createDefaultToolRegistry().get("write_file");
@@ -85,4 +182,12 @@ test("filesystem tools reject paths outside the workspace", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.error?.code, "path_outside_workspace");
+});
+
+test("resolveWorkspacePath handles root and rejects absolute paths outside the workspace", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
+
+  assert.deepEqual(resolveWorkspacePath(cwd, "."), { ok: true, path: path.resolve(cwd) });
+  assert.equal(resolveWorkspacePath(cwd, "../outside").ok, false);
+  assert.equal(resolveWorkspacePath(cwd, path.join(os.tmpdir(), "outside.txt")).ok, false);
 });

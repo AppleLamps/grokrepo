@@ -13,13 +13,14 @@ Current status:
 - [x] Phase 5 Image System
 - [x] Phase 6 Context Engine
 - [x] Phase 7 UX Polish
-- [ ] Phase 8 Packaging
+- [~] Phase 8 Packaging
 
 Verification status:
 - Latest verified build: `npm run build` passed.
-- Latest verified tests: `npm test` passed with 88 tests.
-- Latest pushed implementation includes Phase 1 through Phase 6.
-- Phase 7 UI polish is present locally and passes, but is not committed yet.
+- Latest verified tests: `npm test` passed with 115 tests.
+- Latest local implementation includes Phase 1 through Phase 7, Phase 8 packaging work, system prompt polish, tool documentation, and test hardening.
+- Test hardening added focused coverage for filesystem tools, patch editing edge cases, session persistence, path safety, tool lifecycle events, debug logs, UI summaries, and git-aware context scanning.
+- Phase 8 packaging metadata, docs, demo guide, and dry-run packaging are present locally and pass. npm publishing is still pending.
 
 ---
 
@@ -197,6 +198,7 @@ Deliverables:
 - [x] diff rendering
 - [x] file application
 - [x] rollback support
+- [x] edge-case test coverage
 
 Tasks:
 
@@ -206,6 +208,7 @@ Requirements:
 - [x] unified diffs
 - [x] syntax highlighting
 - [x] file-level partial apply support
+- [x] create file, missing file, binary file, stale hunk, CRLF, and multi-hunk coverage
 
 ---
 
@@ -368,6 +371,8 @@ Deliverables:
 - [x] clean layouts
 - [x] responsive UI
 - [x] better logging
+- [x] readline-style input movement
+- [x] in-terminal debug log viewing
 
 Tasks:
 
@@ -396,19 +401,21 @@ Requirements:
 - [x] actionable errors
 - [x] retry support
 - [x] debug logs
+- [x] `/debug` recent log viewer
 
 ---
 
-# Phase 8 — Packaging [ ]
+# Phase 8 — Packaging [~]
 
 Goal:
 Ship a usable developer product.
 
 Deliverables:
-- [ ] npm package
-- [ ] install script
-- [ ] docs
-- [ ] demo repo
+- [x] npm package
+- [x] install script
+- [x] docs
+- [x] demo repo
+- [x] tool reference docs
 
 Tasks:
 
@@ -420,6 +427,12 @@ Requirements:
 npm publish
 ```
 
+Status:
+- [ ] publish to npm
+- [x] package metadata
+- [x] package file allowlist
+- [x] package dry-run verification
+
 ---
 
 ## Add Install Command
@@ -430,27 +443,32 @@ Target:
 npx grokcode
 ```
 
+Status:
+- [x] package bin configured
+- [x] README install instructions
+- [x] local package verification script
+
 ---
 
 ## Create Demo Content
 
 Deliver:
-- demo videos
-- example repos
-- screenshots
-- tutorials
+- [ ] demo videos
+- [x] example repo guide
+- [ ] screenshots
+- [x] tutorials
 
 ---
 
 # Recommended Next Steps
 
-1. Start Phase 8 packaging after UX polish stabilizes.
-2. Add native OS clipboard image capture only if the terminal UI needs it.
-3. Continue optional UI refinements: richer debug-log viewing and full readline-style cursor movement.
+1. Decide whether to publish `grokcode@1.0.0` to npm now or keep it as a local package candidate.
+2. Add screenshots or a short demo video if needed before publishing.
+3. Add native OS clipboard image capture only if the terminal UI needs it.
 
 ---
 
-# Suggested Initial File Tree
+# Current File Tree
 
 ```text
 src/
@@ -458,32 +476,51 @@ src/
 
   cli/
     app.tsx
+    approval-panel.tsx
+    composer.tsx
+    debug-panel.tsx
+    header.tsx
     input.tsx
+    message-list.tsx
     output.tsx
+    status-bar.tsx
+    tool-timeline.tsx
 
-  runtime/
-    session.ts
-    context.ts
-    approvals.ts
+  context/
+    builder.ts
+    scanner.ts
+    types.ts
+
+  editing/
+    backups.ts
+    diff.ts
+    engine.ts
 
   providers/
     grok.ts
+    images.ts
+    search.ts
+
+  runtime/
+    chat.ts
+    session.ts
+    summarization.ts
 
   tools/
-    filesystem/
-    git/
-    shell/
-    web/
-    images/
+    editing.ts
+    filesystem.ts
+    git.ts
+    images.ts
+    registry.ts
+    search.ts
+    shell.ts
 
   prompts/
     system.ts
-    coding.ts
 
   utils/
-    diff.ts
-    logger.ts
-    tokens.ts
+    config.ts
+    debug-log.ts
 ```
 
 ---

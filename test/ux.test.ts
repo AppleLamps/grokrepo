@@ -1,18 +1,30 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { approvalPanelModel } from "../src/cli/approval-panel.js";
 import { mergeToolEvent } from "../src/cli/app.js";
-import { composerState, navigateHistory } from "../src/cli/composer.js";
+import {
+  composerState,
+  deleteWordBeforeCursor,
+  insertAtCursor,
+  moveCursor,
+  navigateHistory,
+  removeAtCursor,
+  removeBeforeCursor
+} from "../src/cli/composer.js";
+import { debugPanelModel } from "../src/cli/debug-panel.js";
 import { diffLineColor, renderDiffLines } from "../src/cli/diff-renderer.js";
 import { headerModel } from "../src/cli/header.js";
 import { statusBarParts } from "../src/cli/status-bar.js";
 import { getTheme, parseThemeMode } from "../src/cli/theme.js";
 import { groupToolEvents } from "../src/cli/tool-timeline.js";
 import { isExpandableSearchEvent, searchResultDetails } from "../src/cli/output.js";
-import { statusColor, statusLabel } from "../src/cli/ui-format.js";
+import { compactToolSummary, statusColor, statusLabel } from "../src/cli/ui-format.js";
 import type { ToolRuntimeEvent } from "../src/runtime/chat.js";
-import { debugLogLine } from "../src/utils/debug-log.js";
+import { debugLogLine, debugLogPath, readDebugLogTail } from "../src/utils/debug-log.js";
 
 test("diff renderer colors added, removed, hunk, and file header lines", () => {
   assert.equal(diffLineColor("+++ README.md"), "gray");
@@ -105,6 +117,100 @@ test("tool status labels and colors are readable", () => {
   assert.equal(statusColor("denied"), "red");
 });
 
+test("compactToolSummary covers core tool result branches", () => {
+  const cases: Array<[ToolRuntimeEvent, string]> = [
+    [
+      {
+        id: "read",
+        tool: "read_file",
+        permission: "passive",
+        status: "completed",
+        args: { path: "src/a.ts" },
+        result: { ok: true, tool: "read_file", output: { path: "src/a.ts", size: 12 } }
+      },
+      "src/a.ts (12 bytes)"
+    ],
+    [
+      {
+        id: "write",
+        tool: "write_file",
+        permission: "active",
+        status: "completed",
+        args: { path: "out.txt", content: "hello" }
+      },
+      "out.txt (5 bytes)"
+    ],
+    [
+      {
+        id: "list",
+        tool: "list_files",
+        permission: "passive",
+        status: "completed",
+        args: { path: "src" },
+        result: { ok: true, tool: "list_files", output: { path: "src", entries: [{ name: "a.ts" }] } }
+      },
+      "src, 1 entries"
+    ],
+    [
+      {
+        id: "grep",
+        tool: "grep",
+        permission: "passive",
+        status: "completed",
+        args: { query: "needle" },
+        result: { ok: true, tool: "grep", output: { matches: [{ path: "a.txt" }, { path: "b.txt" }] } }
+      },
+      "needle, 2 matches"
+    ],
+    [{ id: "status", tool: "git_status", permission: "passive", status: "completed" }, "working tree status"],
+    [{ id: "diff", tool: "git_diff", permission: "passive", status: "completed" }, "working tree diff"],
+    [{ id: "commit", tool: "git_commit", permission: "active", status: "completed", args: { message: "save work" } }, "save work"],
+    [{ id: "shell", tool: "run_shell", permission: "active", status: "completed", args: { command: "npm test" } }, "npm test"],
+    [{ id: "patch", tool: "apply_patch", permission: "active", status: "completed", args: { summary: "fix parser" } }, "fix parser"],
+    [{ id: "undo", tool: "undo_patch", permission: "active", status: "completed" }, "latest backup"],
+    [
+      {
+        id: "web",
+        tool: "web_search",
+        permission: "passive",
+        status: "completed",
+        args: { query: "docs" },
+        result: { ok: true, tool: "web_search", output: { query: "docs", citations: [{ url: "https://example.com" }] } }
+      },
+      "docs, 1 sources"
+    ],
+    [
+      {
+        id: "image",
+        tool: "image_generate",
+        permission: "active",
+        status: "completed",
+        args: { prompt: "logo" },
+        result: { ok: true, tool: "image_generate", output: { images: [{ path: "one.png" }] } }
+      },
+      "logo, 1 image"
+    ],
+    [{ id: "unknown", tool: "unknown_tool", permission: "passive", status: "completed" }, "passive tool"]
+  ];
+
+  for (const [event, expected] of cases) {
+    assert.equal(compactToolSummary(event), expected);
+  }
+});
+
+test("compactToolSummary surfaces structured errors", () => {
+  assert.equal(
+    compactToolSummary({
+      id: "read",
+      tool: "read_file",
+      permission: "passive",
+      status: "completed",
+      result: { ok: false, tool: "read_file", error: { code: "read_failed", message: "file missing" } }
+    }),
+    "file missing"
+  );
+});
+
 test("approval panel model shows patch selected file count", () => {
   const model = approvalPanelModel(
     {
@@ -167,7 +273,7 @@ test("composer disabled state renders as waiting", () => {
   assert.deepEqual(composerState(false), {
     prompt: ">  ",
     cursor: "_",
-    hint: "/exit /retry history: up/down"
+    hint: "/exit /retry /debug arrows edit history ctrl+a/e/u/k/w"
   });
 });
 
@@ -219,6 +325,17 @@ test("composer history navigation preserves draft and walks commands", () => {
   assert.deepEqual(backToDraft, { index: undefined, draft: "draft", value: "draft" });
 });
 
+test("composer cursor editing supports insertion, deletion, and movement", () => {
+  assert.deepEqual(insertAtCursor({ value: "helo", cursor: 2 }, "l"), { value: "hello", cursor: 3 });
+  assert.deepEqual(removeBeforeCursor({ value: "hello", cursor: 3 }), { value: "helo", cursor: 2 });
+  assert.deepEqual(removeAtCursor({ value: "hello", cursor: 1 }), { value: "hllo", cursor: 1 });
+  assert.deepEqual(deleteWordBeforeCursor({ value: "run npm test", cursor: 12 }), { value: "run npm", cursor: 7 });
+  assert.deepEqual(moveCursor({ value: "abc", cursor: 1 }, "left"), { value: "abc", cursor: 0 });
+  assert.deepEqual(moveCursor({ value: "abc", cursor: 1 }, "right"), { value: "abc", cursor: 2 });
+  assert.deepEqual(moveCursor({ value: "abc", cursor: 2 }, "start"), { value: "abc", cursor: 0 });
+  assert.deepEqual(moveCursor({ value: "abc", cursor: 0 }, "end"), { value: "abc", cursor: 3 });
+});
+
 test("debug log line redacts secrets", () => {
   const line = debugLogLine({
     timestamp: "2026-01-01T00:00:00.000Z",
@@ -233,3 +350,60 @@ test("debug log line redacts secrets", () => {
   assert.match(line, /Bearer \[redacted\]/);
   assert.doesNotMatch(line, /fixture-secret/);
 });
+
+test("debug log line avoids false Bearer redaction and redacts nested secrets", () => {
+  const line = debugLogLine({
+    timestamp: "2026-01-01T00:00:00.000Z",
+    event: "test",
+    data: {
+      command: "Authorization: Bearer",
+      nested: {
+        apiKey: "nested-secret"
+      }
+    }
+  });
+
+  assert.match(line, /Authorization: Bearer/);
+  assert.match(line, /"apiKey":"\[redacted\]"/);
+  assert.doesNotMatch(line, /nested-secret/);
+});
+
+test("readDebugLogTail parses recent redacted debug entries", async () => {
+  const cwd = await mkdirTempWorkspace();
+  await mkdir(path.dirname(debugLogPath(cwd)), { recursive: true });
+  await writeFile(
+    debugLogPath(cwd),
+    [
+      debugLogLine({ timestamp: "2026-01-01T00:00:00.000Z", event: "first", data: { apiKey: "secret" } }),
+      debugLogLine({ timestamp: "2026-01-01T00:00:01.000Z", event: "second", data: { value: 2 } }),
+      "not-json\n"
+    ].join(""),
+    "utf8"
+  );
+
+  const entries = await readDebugLogTail(cwd, 2);
+
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0]?.event, "second");
+  assert.deepEqual(entries[0]?.data, { value: 2 });
+  assert.equal(entries[1]?.event, "invalid_json");
+});
+
+test("debug panel model formats recent log entries", () => {
+  const model = debugPanelModel([
+    {
+      timestamp: "2026-01-01T12:34:56.000Z",
+      event: "chat.complete",
+      data: { usage: { totalTokens: 10 } }
+    }
+  ]);
+
+  assert.equal(model.title, "DEBUG recent log entries");
+  assert.equal(model.controls, "/debug toggles this view");
+  assert.match(model.lines[0] ?? "", /12:34:56 chat\.complete/);
+  assert.match(model.lines[0] ?? "", /totalTokens/);
+});
+
+async function mkdirTempWorkspace(): Promise<string> {
+  return mkdtemp(path.join(os.tmpdir(), "grokcode-ux-"));
+}

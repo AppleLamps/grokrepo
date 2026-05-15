@@ -71,6 +71,37 @@ test("passive tool call executes and final response continues", async () => {
   assert.equal(session.listMessages().some((message) => message.role === "tool"), true);
 });
 
+test("passive tool emits requested, running, and completed lifecycle events", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const events: string[] = [];
+
+  registry.register(createTool("read_test", "passive", async () => toolSuccess("read_test", { value: "ok" })));
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "read_test", arguments: "{}" }] }],
+    [{ type: "content", content: "final" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("use the tool");
+
+  await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    onDelta: () => undefined,
+    onToolEvent: (event) => events.push(`${event.id}:${event.status}:${event.result?.ok ?? ""}`),
+    requestApproval: async () => false
+  });
+
+  assert.deepEqual(events, [
+    "call_1:requested:",
+    "call_1:running:",
+    "call_1:completed:true"
+  ]);
+});
+
 test("active tool denial returns a denial tool result", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
   const registry = new ToolRegistry();
@@ -103,6 +134,37 @@ test("active tool denial returns a denial tool result", async () => {
   assert.equal(result.content, "denied handled");
   assert.ok(toolMessage);
   assert.match(toolMessage.content, /approval_denied/);
+});
+
+test("active tool denial emits approval and denied lifecycle events", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const events: string[] = [];
+
+  registry.register(createTool("active_test", "active", async () => toolSuccess("active_test", { value: "ran" })));
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "active_test", arguments: "{}" }] }],
+    [{ type: "content", content: "denied handled" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("try active tool");
+
+  await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    onDelta: () => undefined,
+    onToolEvent: (event) => events.push(`${event.id}:${event.status}:${event.result?.ok ?? ""}`),
+    requestApproval: async () => false
+  });
+
+  assert.deepEqual(events, [
+    "call_1:requested:",
+    "call_1:approval_requested:",
+    "call_1:denied:false"
+  ]);
 });
 
 test("active tool approval executes exactly once", async () => {

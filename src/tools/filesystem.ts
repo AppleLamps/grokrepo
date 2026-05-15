@@ -211,7 +211,9 @@ async function runRipgrep(
     });
   }
 
-  if (result.stderr.toLowerCase().includes("not recognized") || result.stderr.toLowerCase().includes("not found")) {
+  const normalizedError = result.stderr.toLowerCase();
+
+  if (normalizedError.includes("not recognized") || normalizedError.includes("not found") || normalizedError.includes("enoent")) {
     return toolFailure("grep", "rg_unavailable", "ripgrep is unavailable.");
   }
 

@@ -6,3 +6,5 @@ dist/
 npm-debug.log*
 
 .workspace/
+.cursor/
+api-docs/

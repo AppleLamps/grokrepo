@@ -20,5 +20,5 @@ export function resolveWorkspacePath(cwd: string, requestedPath: string): { ok: 
 
 export function toWorkspaceRelativePath(cwd: string, absolutePath: string): string {
   const relative = path.relative(path.resolve(cwd), absolutePath);
-  return relative.length > 0 ? relative : ".";
+  return relative.length > 0 ? relative.replaceAll(path.sep, "/") : ".";
 }

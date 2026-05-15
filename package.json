@@ -3,20 +3,49 @@
   "version": "1.0.0",
   "description": "A terminal-native AI engineering assistant powered by Grok 4.3.",
   "type": "module",
+  "private": false,
   "bin": {
     "grokcode": "./dist/index.js"
   },
   "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    ".env.example"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test test/tools.test.ts test/runtime.test.ts test/editing.test.ts test/search.test.ts test/images.test.ts test/context.test.ts test/summarization.test.ts test/workflows.test.ts test/ux.test.ts"
+    "test": "node --import tsx --test test/tools.test.ts test/runtime.test.ts test/editing.test.ts test/search.test.ts test/images.test.ts test/context.test.ts test/summarization.test.ts test/workflows.test.ts test/ux.test.ts",
+    "prepack": "npm run build",
+    "pack:dry-run": "npm pack --dry-run",
+    "verify:package": "npm run build && npm pack --dry-run"
   },
-  "keywords": [],
+  "keywords": [
+    "grok",
+    "xai",
+    "cli",
+    "coding-assistant",
+    "ink"
+  ],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AppleLamps/grokrepo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AppleLamps/grokrepo/issues"
+  },
+  "homepage": "https://github.com/AppleLamps/grokrepo#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "chalk": "^5.6.2",
     "dotenv": "^17.4.2",

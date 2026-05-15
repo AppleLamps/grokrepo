@@ -11,7 +11,7 @@ import type { ContextRuntimeMetadata } from "../runtime/summarization.js";
 import type { ToolRegistry } from "../tools/index.js";
 import type { ToolApprovalDecision } from "../tools/types.js";
 import type { AppConfig } from "../utils/config.js";
-import { writeDebugLog } from "../utils/debug-log.js";
+import { readDebugLogTail, writeDebugLog, type DebugLogViewEntry } from "../utils/debug-log.js";
 import { Header } from "./header.js";
 import { ChatInput } from "./input.js";
 import { ChatOutput, isExpandableSearchEvent } from "./output.js";
@@ -44,6 +44,8 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
   const [usage, setUsage] = useState<GrokUsage>();
   const [contextMetadata, setContextMetadata] = useState<ContextRuntimeMetadata>();
   const [lastSubmittedValue, setLastSubmittedValue] = useState<string>();
+  const [debugVisible, setDebugVisible] = useState(false);
+  const [debugEntries, setDebugEntries] = useState<DebugLogViewEntry[]>([]);
   const theme = useMemo(() => getTheme(config.uiTheme ?? "dark"), [config.uiTheme]);
 
   const status = useMemo(() => {
@@ -142,6 +144,14 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
       return;
     }
 
+    if (value === "/debug") {
+      const entries = await readDebugLogTail(process.cwd(), 10);
+      setDebugEntries(entries);
+      setDebugVisible((current) => !current);
+      void writeDebugLog(process.cwd(), config.debug, "debug.toggle", { visible: !debugVisible, entries: entries.length });
+      return;
+    }
+
     if (value === "/retry") {
       if (!lastSubmittedValue) {
         setError("Nothing to retry yet.");
@@ -205,6 +215,9 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
             ok: event.result?.ok,
             error: event.result?.error?.code
           });
+          if (debugVisible) {
+            void refreshDebugEntries();
+          }
         },
         requestApproval: (request) =>
           new Promise((resolve) => {
@@ -223,14 +236,24 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
         usage: result.usage,
         context: result.context
       });
+      if (debugVisible) {
+        void refreshDebugEntries();
+      }
     } catch (cause) {
       setMessages([...session.listMessages()]);
       const message = cause instanceof Error ? cause.message : "Unknown chat error.";
       setError(message);
       void writeDebugLog(process.cwd(), config.debug, "chat.error", { message });
+      if (debugVisible) {
+        void refreshDebugEntries();
+      }
     } finally {
       setBusy(false);
     }
+  }
+
+  async function refreshDebugEntries(): Promise<void> {
+    setDebugEntries(await readDebugLogTail(process.cwd(), 10));
   }
 
   return (
@@ -246,6 +269,8 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
           error={error}
           usage={usage}
           contextMetadata={contextMetadata}
+          debugEntries={debugEntries}
+          debugVisible={debugVisible}
           busy={busy}
           debug={Boolean(config.debug)}
           theme={theme}

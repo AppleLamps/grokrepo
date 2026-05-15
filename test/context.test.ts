@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { budgetContext, DefaultContextBuilder, extractFileReferences, scanRepo } from "../src/context/index.js";
+import { runFileCommand } from "../src/tools/process.js";
 import type { ContextItem } from "../src/context/types.js";
 
 test("scanRepo detects package manager, frameworks, and entrypoints", async () => {
@@ -85,6 +86,15 @@ test("DefaultContextBuilder truncates large file excerpts", async () => {
   assert.match(item.content, /\[truncated\]/);
 });
 
+test("DefaultContextBuilder reports truncation under a tight token budget", async () => {
+  const cwd = await createContextWorkspace();
+  const builder = new DefaultContextBuilder({ tokenBudget: 1, maxFiles: 10 });
+
+  const context = await builder.buildContext(cwd, "explain this project");
+
+  assert.equal(context.truncated, true);
+});
+
 test("scanRepo returns non-repo git metadata outside git", async () => {
   const cwd = await createContextWorkspace();
 
@@ -93,6 +103,22 @@ test("scanRepo returns non-repo git metadata outside git", async () => {
   assert.equal(scan.git.isRepo, false);
   assert.deepEqual(scan.git.status, []);
   assert.deepEqual(scan.git.recentFiles, []);
+});
+
+test("scanRepo detects git repo metadata and recent files", async () => {
+  const cwd = await createContextWorkspace();
+  await runFileCommand("git", ["init"], { cwd });
+  await runFileCommand("git", ["config", "user.email", "test@example.com"], { cwd });
+  await runFileCommand("git", ["config", "user.name", "Test User"], { cwd });
+  await runFileCommand("git", ["add", "src/index.ts"], { cwd });
+  await runFileCommand("git", ["commit", "-m", "add index"], { cwd });
+  await writeFile(path.join(cwd, "README.md"), "# Changed\n");
+
+  const scan = await scanRepo(cwd);
+
+  assert.equal(scan.git.isRepo, true);
+  assert.equal(scan.git.recentFiles.includes("src/index.ts"), true);
+  assert.equal(scan.git.status.some((line) => line.includes("README.md")), true);
 });
 
 async function createContextWorkspace(): Promise<string> {

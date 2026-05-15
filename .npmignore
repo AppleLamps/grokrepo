@@ -1,0 +1,16 @@
+src/
+test/
+api-docs/
+demo/
+docs/
+.cursor/
+.workspace/
+.env
+.env.local
+.env.*.local
+tsconfig.json
+PLAN.md
+UIPLAN.md
+tools.md
+npm-debug.log*
+*.tgz

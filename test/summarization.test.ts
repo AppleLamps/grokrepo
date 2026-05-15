@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { renderSummarizationPrompt, GrokProvider } from "../src/providers/grok.js";
@@ -87,6 +90,45 @@ test("session serializes summary and toChatMessages excludes covered messages", 
   assert.equal(messages.some((message) => message.role === "system" && String(message.content).includes("<conversation_summary>")), true);
   assert.equal(messages.some((message) => String(message.content).includes("old request")), false);
   assert.equal(messages.some((message) => String(message.content).includes("new request")), true);
+});
+
+test("session saves and restores a full disk round trip", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-session-"));
+  const sessionPath = path.join(cwd, "sessions", "session.json");
+  const session = new Session();
+  const old = session.addUserMessage("old request");
+  session.addAssistantMessage("old answer");
+  session.addUserMessage("new request");
+  session.setConversationSummary(createSummary([old.id], "Old request was answered."));
+
+  await session.save(sessionPath);
+  const restored = await Session.restore(sessionPath);
+
+  assert.deepEqual(restored.serialize(), session.serialize());
+});
+
+test("toChatMessages prepends context when restored session has no system message", () => {
+  const session = new Session({
+    id: "session_without_system",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    messages: [
+      {
+        id: "u1",
+        role: "user",
+        content: "hello",
+        createdAt: "2026-01-01T00:00:01.000Z",
+        turnId: "t1"
+      }
+    ]
+  });
+
+  const messages = session.toChatMessages("repo context");
+
+  assert.equal(messages[0]?.role, "system");
+  assert.equal(messages[0]?.content, "repo context");
+  assert.equal(messages[1]?.role, "user");
+  assert.equal(messages[1]?.content, "hello");
 });
 
 test("restored sessions without turn ids are grouped by user boundaries", () => {

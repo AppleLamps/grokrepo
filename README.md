@@ -2,428 +2,253 @@
 
 A terminal-native AI engineering assistant powered by Grok 4.3.
 
-GrokCode is designed to behave more like a developer operating system than a chatbot.
+GrokCode is a local developer runtime for chat, code inspection, patch editing, search, image workflows, and approved tool execution. It is designed to stay deterministic and transparent: passive tools can inspect context, active tools ask before mutating anything.
 
-It combines:
-- conversational coding workflows
-- repository-aware reasoning
-- filesystem tools
-- Git integration
-- shell execution
-- web search
-- X search
-- image generation
-- image understanding
+## Status
 
-The goal is to create a Claude-Code / Codex-style experience with strong multimodal capabilities.
+Current local build:
 
----
+- Phases 1 through 7 are complete.
+- Phase 8 packaging is implemented locally and still needs npm publish plus optional demo media.
+- Latest verified suite: `npm run build` passed and `npm test` passed with 115 tests.
 
-# Vision
+## Install
 
-Modern coding assistants are mostly text generators.
-
-GrokCode is intended to become a unified engineering runtime capable of:
-- understanding repositories
-- modifying code safely
-- researching problems live
-- generating UI assets
-- analyzing screenshots
-- debugging systems
-- operating through tools
-
-The assistant should feel:
-- fast
-- deterministic
-- transparent
-- terminal-native
-- trustworthy
-
-The product philosophy:
-
-```text
-Text handles logic.
-Search handles reality.
-Images handle interfaces.
-Tools handle execution.
-```
-
----
-
-# Core Features
-
-## Coding Assistant
-
-- multi-turn coding chat
-- repository awareness
-- patch generation
-- safe file editing
-- shell command suggestions
-- Git-aware workflows
-- streaming responses
-
-Example:
+Local development:
 
 ```bash
+npm install
+npm run dev
+```
+
+Build and run the compiled CLI:
+
+```bash
+npm run build
+npm start
+```
+
+Package usage after publishing:
+
+```bash
+npx grokcode
+```
+
+Global install after publishing:
+
+```bash
+npm install -g grokcode
 grokcode
 ```
 
-Then:
+## Configuration
+
+Create a `.env` file or export environment variables:
 
 ```text
-> explain the auth flow
-> fix failing tests
-> refactor this into hooks
-> optimize this query
+XAI_API_KEY=
+GROK_MODEL=grok-4.3
+GROK_IMAGE_MODEL=grok-imagine-image-quality
+GROK_BASE_URL=https://api.x.ai/v1
+GROKCODE_THEME=dark
+GROKCODE_DEBUG=false
+GROKCODE_MOCK=false
 ```
 
----
+Options:
 
-## Web Search
+- `GROKCODE_THEME`: `dark`, `light`, or `compact`.
+- `GROKCODE_DEBUG=true`: writes redacted events to `.workspace/logs/grokcode-debug.log`.
+- `GROKCODE_MOCK=true`: runs the local chat loop without calling the API.
 
-Real-time web search integrated directly into the tool system.
+## CLI Controls
 
-Use cases:
-- framework updates
-- library changes
-- debugging production issues
-- documentation lookup
-- researching APIs
+Inside the terminal UI:
 
-Example:
+- `/exit` or `/quit`: close the app.
+- `/retry`: retry the last submitted prompt.
+- `/debug`: show or hide recent debug log entries.
+- `Tab`: expand or collapse the latest search result details.
+- `Up` and `Down`: navigate command history.
+- `Left` and `Right`: move within the current input.
+- `Ctrl+A` and `Ctrl+E`: jump to start or end of input.
+- `Ctrl+U`: clear before the cursor.
+- `Ctrl+K`: clear after the cursor.
+- `Ctrl+W`: delete the previous word.
 
-```text
-> why are people having issues with nextjs middleware?
+## Verification
+
+Run these before publishing or pushing major changes:
+
+```bash
+npm run build
+npm test
+npm run pack:dry-run
 ```
 
----
+Full package verification:
 
-## X Search
-
-Real-time developer discussion search.
-
-Use cases:
-- outage monitoring
-- breaking changes
-- unofficial fixes
-- AI tooling news
-- infra incidents
-
-Example:
-
-```text
-> are people reporting vercel outages today?
+```bash
+npm run verify:package
 ```
 
----
+The npm package is intentionally small. It ships `dist/`, `README.md`, `.env.example`, and package metadata.
 
-## Image Generation
+## Features
 
-Generate development assets directly into projects.
+GrokCode currently includes:
 
-Use cases:
-- landing page graphics
-- hero images
-- Open Graph images
-- icons
-- dashboard illustrations
-- placeholder art
+- streaming multi-turn chat
+- repository context scanning
+- conversation summarization
+- filesystem inspection
+- Git inspection and approved commits
+- approved shell execution
+- patch-based editing with backups and undo
+- web search with citations
+- X search with citations
+- image understanding
+- image generation
+- image editing
+- terminal UI themes
+- debug logs and in-terminal debug viewing
 
-Example:
+## Tool System
 
-```text
-> create a hero image for an AI fintech startup
-```
+Tools are registered in `src/tools/index.ts` and exposed to the model through OpenAI-compatible function calling.
 
----
+Passive tools can run automatically:
 
-## Image Understanding
+- `read_file`
+- `list_files`
+- `grep`
+- `git_status`
+- `git_diff`
+- `web_search`
+- `x_search`
+- `image_understand`
 
-Analyze screenshots and visual references.
+Active tools require explicit approval:
 
-Use cases:
-- screenshot debugging
-- design-to-code
-- UI recreation
-- diagram analysis
-- error screenshot parsing
+- `write_file`
+- `run_shell`
+- `git_commit`
+- `apply_patch`
+- `undo_patch`
+- `image_generate`
+- `image_edit`
 
-Example:
+See `tools.md` for the full tool reference.
 
-```text
-> recreate this dashboard in React
-```
+## Editing Workflow
 
----
+Normal code edits use `apply_patch`.
 
-# Architecture
+The editing flow is:
 
-```text
-CLI UI
-  ↓
-Conversation Runtime
-  ↓
-Tool Router
-  ├── filesystem tools
-  ├── git tools
-  ├── shell tools
-  ├── web search
-  ├── x search
-  ├── image generation
-  └── image understanding
-          ↓
-      Grok 4.3
-```
+1. Read the target file.
+2. Generate a unified diff with workspace-relative paths.
+3. Show a file-level preview.
+4. Ask for approval.
+5. Apply selected files.
+6. Create backups under `.workspace/patches/`.
+7. Roll back automatically on failed partial application.
 
----
+`undo_patch` can restore the latest backup or a named backup id.
 
-# Tech Stack
+`write_file` remains available for new files, generated files, or intentional full-file replacement.
 
-## Runtime
+## Search And Images
 
-- Node.js
-- TypeScript
+Search tools use xAI's Responses API internally:
 
-## CLI Interface
+- `web_search`: current facts, docs, framework changes, live web sources.
+- `x_search`: live developer discussion, outages, unofficial fixes, breaking changes.
 
-- Ink
-- Chalk
-- Ora
+Image tools use Grok vision and Grok Imagine:
 
-## AI API
+- `image_understand`: local image paths, public URLs, file URLs, and image data URIs.
+- `image_generate`: approved generation saved under `.workspace/images`.
+- `image_edit`: approved edits to one to three source images saved under `.workspace/images`.
 
-- xAI Grok 4.3
-- OpenAI-compatible API format
+Terminal drag and paste workflows are supported when the terminal inserts a file path, file URL, or data URI.
 
-## Storage
+## Context Engine
 
-Initial:
-- local JSON
+GrokCode builds lightweight repository context before each user turn.
 
-Later:
-- SQLite
+The context engine detects:
 
----
+- package manager
+- frameworks
+- entrypoints
+- git branch and status
+- recently changed files
+- explicit file references in the latest prompt
 
-# Project Structure
+Repo context is temporary guidance. The model is instructed to use `read_file` before making exact code claims or edits.
+
+Long conversations can be summarized when the active history passes the configured threshold. Raw messages remain in session state for auditability.
+
+## Project Structure
 
 ```text
 src/
   cli/
-  commands/
+  context/
+  editing/
+  prompts/
+  providers/
   runtime/
   tools/
-  prompts/
-  context/
-  providers/
-  ui/
   utils/
+
+test/
+  context.test.ts
+  editing.test.ts
+  images.test.ts
+  runtime.test.ts
+  search.test.ts
+  summarization.test.ts
+  tools.test.ts
+  ux.test.ts
+  workflows.test.ts
 
 .workspace/
   images/
-  generated/
-  patches/
   logs/
-  summaries/
+  patches/
 ```
 
----
+## Packaging
 
-# Tool System
+Packaging notes live in `docs/PACKAGING.md`.
 
-The assistant is built around tools.
+Demo prompts and local verification steps live in `demo/README.md`.
 
-Tools are the core abstraction.
+Publish command:
 
-Example tools:
-
-```text
-read_file(path)
-write_file(path)
-list_files(path)
-grep(query)
-run_shell(command)
-git_diff()
-web_search(query)
-x_search(query)
-image_generate(prompt)
-image_understand(image)
+```bash
+npm publish
 ```
 
-The model reasons about which tools to use.
+## Development Philosophy
 
----
-
-# Safety Model
-
-Passive tools:
-- read_file
-- grep
-- git_status
-- web_search
-- x_search
-- image_understand
-
-Active tools:
-- write_file
-- run_shell
-- image_generate
-- git_commit
-
-All active tools require user approval.
-
-Example:
-
-```text
-Model wants to run:
-npm test
-
-Allow? (y/n)
-```
-
----
-
-# Editing Workflow
-
-The assistant should never silently overwrite files.
-
-Editing loop:
-
-1. Read file
-2. Build prompt
-3. Generate patch
-4. Show diff
-5. Ask approval
-6. Apply changes
-
----
-
-# Streaming UX
-
-The CLI should stream actions live.
-
-Example:
-
-```text
-● Searching web...
-● Reading auth.ts...
-● Running tests...
-● Proposing patch...
-```
-
-The assistant should always expose:
-- tool calls
-- file edits
-- shell commands
-- generated assets
-
-Transparency is critical.
-
----
-
-# Context Management
-
-The assistant should NOT ingest entire repositories.
-
-Context should be selected intelligently.
-
-Initial strategy:
-- current directory
-- git status
-- recent files
-- explicit file references
-- nearest related files
-
-Future improvements:
-- summaries
-- token budgeting
-- semantic retrieval
-- embeddings
-
----
-
-# Prompting Strategy
-
-Use structured prompts.
-
-Example:
-
-```xml
-<system>
-You are a coding assistant.
-Only modify requested files.
-Prefer minimal edits.
-</system>
-
-<repo_context>
-...
-</repo_context>
-
-<user_request>
-Fix the login race condition.
-</user_request>
-```
-
-Structured prompting improves reliability significantly.
-
----
-
-# Initial MVP Goals
-
-Version 1 should support:
-
-- multi-turn chat
-- file reading
-- patch generation
-- streaming
-- Git awareness
-- shell command execution
-- web search
-- X search
-- image generation
-- image understanding
-
-Do NOT build initially:
-- autonomous agents
-- browser automation
-- cloud sync
-- MCP integration
-- vector databases
-- multi-agent systems
-
----
-
-# Long-Term Direction
-
-Potential future features:
-
-- voice mode
-- collaborative sessions
-- cloud workspaces
-- background agents
-- CI/CD integration
-- deployment workflows
-- multimodal debugging
-- mobile companion app
-- plugin ecosystem
-
----
-
-# Development Philosophy
-
-Priorities:
+GrokCode prioritizes:
 
 1. reliability
 2. transparency
-3. speed
-4. deterministic behavior
-5. strong UX
+3. deterministic behavior
+4. speed
+5. strong terminal UX
 
 Avoid:
-- excessive verbosity
-- fake autonomy
+
 - hidden actions
 - uncontrolled file edits
-- unpredictable workflows
+- fake autonomy
+- vector databases
+- MCP
+- autonomous agents
 
----
+Those features can be reconsidered later, but they are outside the current MVP.
