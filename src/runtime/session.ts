@@ -13,13 +13,25 @@ export interface SessionMessage {
   role: SessionRole;
   content: string;
   createdAt: string;
+  turnId?: string;
   toolCalls?: ToolCallRequest[];
   toolCallId?: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  text: string;
+  coveredMessageIds: string[];
+  sourceMessageCount: number;
+  estimatedTokens: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SerializedSession {
   id: string;
   messages: SessionMessage[];
+  summary?: ConversationSummary;
   createdAt: string;
   updatedAt: string;
 }
@@ -29,12 +41,14 @@ export class Session {
   readonly createdAt: string;
   private updatedAt: string;
   private readonly messages: SessionMessage[];
+  private summary?: ConversationSummary;
+  private currentTurnId?: string;
 
   constructor(seed?: SerializedSession) {
     this.id = seed?.id ?? createId("session");
     this.createdAt = seed?.createdAt ?? new Date().toISOString();
     this.updatedAt = seed?.updatedAt ?? this.createdAt;
-    this.messages = seed?.messages ?? [
+    this.messages = seed?.messages ? normalizeSeedMessages(seed.messages) : [
       {
         id: createId("message"),
         role: "system",
@@ -42,6 +56,8 @@ export class Session {
         createdAt: this.createdAt
       }
     ];
+    this.summary = seed?.summary;
+    this.currentTurnId = [...this.messages].reverse().find((message) => message.turnId)?.turnId;
   }
 
   listMessages(): readonly SessionMessage[] {
@@ -49,19 +65,37 @@ export class Session {
   }
 
   addUserMessage(content: string): SessionMessage {
-    return this.addMessage("user", content);
+    this.currentTurnId = createId("turn");
+    return this.addMessage("user", content, { turnId: this.currentTurnId });
   }
 
   addAssistantMessage(content: string, toolCalls?: ToolCallRequest[]): SessionMessage {
-    return this.addMessage("assistant", content, { toolCalls });
+    return this.addMessage("assistant", content, { toolCalls, turnId: this.ensureTurnId() });
   }
 
   addToolMessage(toolCallId: string, content: string): SessionMessage {
-    return this.addMessage("tool", content, { toolCallId });
+    return this.addMessage("tool", content, { toolCallId, turnId: this.ensureTurnId() });
+  }
+
+  getConversationSummary(): ConversationSummary | undefined {
+    return this.summary;
+  }
+
+  setConversationSummary(summary: ConversationSummary): void {
+    this.summary = summary;
+    this.updatedAt = summary.updatedAt;
+  }
+
+  activeMessages(): readonly SessionMessage[] {
+    const coveredIds = new Set(this.summary?.coveredMessageIds ?? []);
+    return this.messages.filter((message) => message.role === "system" || !coveredIds.has(message.id));
   }
 
   toChatMessages(contextPrompt?: string): ChatCompletionMessageParam[] {
-    const messages: ChatCompletionMessageParam[] = this.messages.map((message): ChatCompletionMessageParam => {
+    const coveredIds = new Set(this.summary?.coveredMessageIds ?? []);
+    const messages: ChatCompletionMessageParam[] = this.messages
+      .filter((message) => message.role === "system" || !coveredIds.has(message.id))
+      .map((message): ChatCompletionMessageParam => {
       if (message.role === "tool") {
         return {
           role: "tool",
@@ -84,23 +118,28 @@ export class Session {
       };
     });
 
-    if (!contextPrompt) {
+    const insertedSystemMessages = [
+      contextPrompt,
+      this.summary ? renderConversationSummaryPrompt(this.summary) : undefined
+    ].filter((prompt): prompt is string => Boolean(prompt));
+
+    if (insertedSystemMessages.length === 0) {
       return messages;
     }
 
     const systemIndex = messages.findIndex((message) => message.role === "system");
-    const contextMessage: ChatCompletionMessageParam = {
+    const extraMessages: ChatCompletionMessageParam[] = insertedSystemMessages.map((content) => ({
       role: "system",
-      content: contextPrompt
-    };
+      content
+    }));
 
     if (systemIndex < 0) {
-      return [contextMessage, ...messages];
+      return [...extraMessages, ...messages];
     }
 
     return [
       ...messages.slice(0, systemIndex + 1),
-      contextMessage,
+      ...extraMessages,
       ...messages.slice(systemIndex + 1)
     ];
   }
@@ -109,6 +148,7 @@ export class Session {
     return {
       id: this.id,
       messages: [...this.messages],
+      ...(this.summary ? { summary: this.summary } : {}),
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };
@@ -128,13 +168,14 @@ export class Session {
   private addMessage(
     role: SessionRole,
     content: string,
-    options: { toolCalls?: ToolCallRequest[]; toolCallId?: string } = {}
+    options: { toolCalls?: ToolCallRequest[]; toolCallId?: string; turnId?: string } = {}
   ): SessionMessage {
     const message = {
       id: createId("message"),
       role,
       content,
       createdAt: new Date().toISOString(),
+      ...(options.turnId && role !== "system" ? { turnId: options.turnId } : {}),
       ...(options.toolCalls ? { toolCalls: options.toolCalls } : {}),
       ...(options.toolCallId ? { toolCallId: options.toolCallId } : {})
     };
@@ -142,9 +183,48 @@ export class Session {
     this.messages.push(message);
     this.updatedAt = message.createdAt;
 
-    // TODO Phase 6: summarize older context once token budgeting exists.
     return message;
   }
+
+  private ensureTurnId(): string {
+    this.currentTurnId ??= createId("turn");
+    return this.currentTurnId;
+  }
+}
+
+function renderConversationSummaryPrompt(summary: ConversationSummary): string {
+  return [
+    "<conversation_summary>",
+    "Purpose: compact summary of earlier conversation turns.",
+    "Rules: treat this as memory, use tools before exact claims or edits.",
+    `sourceMessageCount: ${summary.sourceMessageCount}`,
+    `coveredMessageIds: ${summary.coveredMessageIds.join(", ")}`,
+    summary.text
+  ].join("\n");
+}
+
+function normalizeSeedMessages(messages: SessionMessage[]): SessionMessage[] {
+  let currentTurnId: string | undefined;
+
+  return messages.map((message) => {
+    if (message.role === "system") {
+      return { ...message };
+    }
+
+    if (message.turnId) {
+      currentTurnId = message.turnId;
+      return { ...message };
+    }
+
+    if (message.role === "user" || !currentTurnId) {
+      currentTurnId = createId("turn");
+    }
+
+    return {
+      ...message,
+      turnId: currentTurnId
+    };
+  });
 }
 
 function createId(prefix: string): string {

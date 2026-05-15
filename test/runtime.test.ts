@@ -9,15 +9,19 @@ import type { ContextBuilder } from "../src/context/index.js";
 import type { GrokStreamDelta } from "../src/providers/grok.js";
 import { runChatTurn } from "../src/runtime/chat.js";
 import { Session } from "../src/runtime/session.js";
+import type { ConversationSummarizationInput, SummarizationResult } from "../src/runtime/summarization.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import { toolSuccess, type ImageProviderLike, type SearchProviderLike, type Tool } from "../src/tools/types.js";
 
 class ScriptedProvider {
   readonly messages: ChatCompletionMessageParam[][] = [];
+  readonly summaryInputs: ConversationSummarizationInput[] = [];
   private readonly turns: GrokStreamDelta[][];
+  private readonly summaryResult?: SummarizationResult;
 
-  constructor(turns: GrokStreamDelta[][]) {
+  constructor(turns: GrokStreamDelta[][], summaryResult?: SummarizationResult) {
     this.turns = turns;
+    this.summaryResult = summaryResult;
   }
 
   async *streamChat(messages: ChatCompletionMessageParam[], _tools?: ChatCompletionTool[]): AsyncGenerator<GrokStreamDelta> {
@@ -27,6 +31,11 @@ class ScriptedProvider {
     for (const event of nextTurn) {
       yield event;
     }
+  }
+
+  async summarizeConversation(input: ConversationSummarizationInput): Promise<SummarizationResult> {
+    this.summaryInputs.push(input);
+    return this.summaryResult ?? { ok: true, summary: "summarized older turns" };
   }
 }
 
@@ -406,6 +415,97 @@ test("tool loop behavior remains unchanged with context enabled", async () => {
   assert.equal(provider.messages.every((messages) => String(messages[1]?.content).includes("repo summary")), true);
 });
 
+test("old conversation turns are summarized before provider call", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const provider = new ScriptedProvider([[{ type: "content", content: "final" }]]);
+  const session = new Session();
+
+  addConversationTurn(session, "old user one " + "x".repeat(80), "old assistant one");
+  addConversationTurn(session, "old user two", "old assistant two");
+  session.addUserMessage("current user request");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    summarization: { triggerTokenThreshold: 1, targetTokenBudget: 100, retainRecentTurns: 1 },
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  assert.equal(result.content, "final");
+  assert.equal(provider.summaryInputs.length, 1);
+  assert.equal(provider.summaryInputs[0]?.messages.some((message) => message.content.includes("old user one")), true);
+  assert.equal(String(provider.messages[0]?.[1]?.content).includes("<conversation_summary>"), true);
+  assert.equal(provider.messages[0]?.some((message) => String(message.content).includes("old user one")), false);
+  assert.equal(provider.messages[0]?.some((message) => String(message.content).includes("current user request")), true);
+  assert.equal(result.context?.conversationSummary.summarized, true);
+});
+
+test("summarization failure does not block chat", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const provider = new ScriptedProvider(
+    [[{ type: "content", content: "final" }]],
+    { ok: false, error: { code: "summary_failed", message: "boom" } }
+  );
+  const session = new Session();
+
+  addConversationTurn(session, "old user " + "x".repeat(80), "old assistant");
+  session.addUserMessage("current user request");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    summarization: { triggerTokenThreshold: 1, targetTokenBudget: 100, retainRecentTurns: 1 },
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  assert.equal(result.content, "final");
+  assert.equal(result.context?.conversationSummary.summarized, false);
+  assert.equal(result.context?.conversationSummary.error?.code, "summary_failed");
+  assert.equal(provider.messages[0]?.some((message) => String(message.content).includes("old user")), true);
+});
+
+test("tool loop still works after conversation compaction", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  let executed = false;
+
+  registry.register(createTool("read_test", "passive", async () => {
+    executed = true;
+    return toolSuccess("read_test", { value: "ok" });
+  }));
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "read_test", arguments: "{}" }] }],
+    [{ type: "content", content: "final" }]
+  ]);
+  const session = new Session();
+  addConversationTurn(session, "old user " + "x".repeat(80), "old assistant");
+  session.addUserMessage("use tool now");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    summarization: { triggerTokenThreshold: 1, targetTokenBudget: 100, retainRecentTurns: 1 },
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  assert.equal(executed, true);
+  assert.equal(result.content, "final");
+  assert.equal(provider.messages.length, 2);
+  assert.equal(provider.messages.every((messages) => String(messages[1]?.content).includes("<conversation_summary>")), true);
+});
+
 function createTool(
   name: string,
   permission: "passive" | "active",
@@ -422,6 +522,11 @@ function createTool(
     },
     execute
   };
+}
+
+function addConversationTurn(session: Session, user: string, assistant: string): void {
+  session.addUserMessage(user);
+  session.addAssistantMessage(assistant);
 }
 
 function createSearchProvider(): SearchProviderLike {
@@ -453,6 +558,14 @@ function createImageProvider(): ImageProviderLike {
         model: "grok-imagine-image-quality",
         images: [{ path: ".workspace/images/asset.jpg", bytes: 10, index: 0 }],
         summary: "generated image"
+      });
+    },
+    async editImage() {
+      return toolSuccess("image_edit", {
+        prompt: "edit",
+        model: "grok-imagine-image-quality",
+        images: [{ path: ".workspace/images/edit.jpg", bytes: 10, index: 0 }],
+        sources: [{ type: "url" }]
       });
     },
     async understandImage() {

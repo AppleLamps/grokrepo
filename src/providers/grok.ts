@@ -8,6 +8,8 @@ import type {
 
 import type { ToolCallRequest } from "../tools/types.js";
 import type { AppConfig } from "../utils/config.js";
+import type { ConversationSummarizationInput, SummarizationResult } from "../runtime/summarization.js";
+import { renderMessagesForSummarization } from "../runtime/summarization.js";
 
 export interface GrokUsage {
   promptTokens?: number;
@@ -40,6 +42,79 @@ export class GrokProvider {
 
   canCallApi(): boolean {
     return this.config.mock || Boolean(this.client);
+  }
+
+  async summarizeConversation(input: ConversationSummarizationInput): Promise<SummarizationResult> {
+    if (this.config.mock) {
+      return {
+        ok: true,
+        summary: createMockSummary(input)
+      };
+    }
+
+    if (!this.client) {
+      return {
+        ok: false,
+        error: {
+          code: "missing_api_key",
+          message: "Missing XAI_API_KEY. Conversation summarization was skipped."
+        }
+      };
+    }
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.config.model,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You summarize older turns for a terminal coding assistant.",
+              "Preserve user goals, decisions, files touched, commands run, approvals, denials, tool results, errors, unresolved tasks, and constraints.",
+              "Do not invent facts. Do not request tools. Keep the summary compact and operational."
+            ].join("\n")
+          },
+          {
+            role: "user",
+            content: renderSummarizationPrompt(input)
+          }
+        ]
+      });
+
+      const summary = response.choices[0]?.message.content?.trim();
+
+      if (!summary) {
+        return {
+          ok: false,
+          error: {
+            code: "empty_summary",
+            message: "Conversation summarization returned no content."
+          }
+        };
+      }
+
+      return {
+        ok: true,
+        summary,
+        ...(response.usage
+          ? {
+              usage: {
+                promptTokens: response.usage.prompt_tokens,
+                completionTokens: response.usage.completion_tokens,
+                totalTokens: response.usage.total_tokens
+              }
+            }
+          : {})
+      };
+    } catch (cause) {
+      return {
+        ok: false,
+        error: {
+          code: "summary_failed",
+          message: cause instanceof Error ? cause.message : String(cause)
+        }
+      };
+    }
   }
 
   async *streamChat(
@@ -203,4 +278,31 @@ function delay(ms: number): Promise<void> {
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+export function renderSummarizationPrompt(input: ConversationSummarizationInput): string {
+  return [
+    `<target_tokens>${input.targetTokenBudget}</target_tokens>`,
+    input.previousSummary
+      ? `<previous_summary>\n${input.previousSummary.text}\n</previous_summary>`
+      : "<previous_summary>none</previous_summary>",
+    `<messages>\n${renderMessagesForSummarization(input.messages)}\n</messages>`
+  ].join("\n\n");
+}
+
+function createMockSummary(input: ConversationSummarizationInput): string {
+  const prior = input.previousSummary?.text ? `Previous summary: ${input.previousSummary.text}` : "Previous summary: none";
+  const messageLines = input.messages.map((message) => {
+    const compactContent = message.content.replace(/\s+/g, " ").slice(0, 120);
+    return `${message.role}(${message.id}): ${compactContent}`;
+  });
+  const summary = [
+    "Mock conversation summary.",
+    prior,
+    `Covered messages: ${input.messages.length}.`,
+    ...messageLines
+  ].join("\n");
+  const maxChars = input.targetTokenBudget * 4;
+
+  return summary.length > maxChars ? summary.slice(0, maxChars) : summary;
 }

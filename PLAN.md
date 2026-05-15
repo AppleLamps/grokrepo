@@ -1,20 +1,41 @@
 # GrokCode Development Plan
 
+Status legend:
+- [x] Completed
+- [~] MVP complete, follow-up work remains
+- [ ] Not started
+
+Current status:
+- [x] Phase 1 Foundation
+- [x] Phase 2 Tool System
+- [x] Phase 3 Editing Engine
+- [x] Phase 4 Search Tools
+- [x] Phase 5 Image System
+- [x] Phase 6 Context Engine
+- [ ] Phase 7 UX Polish
+- [ ] Phase 8 Packaging
+
+Verification status:
+- Latest verified build: `npm run build` passed.
+- Latest verified tests: `npm test` passed with 76 tests.
+- Latest pushed implementation includes Phase 1 through Phase 6 after the current branch is pushed.
+- Phase 3-6 deferred work and expanded workflow tests are included in this branch.
+
 ---
 
-# Phase 1 — Foundation
+# Phase 1 — Foundation [x]
 
 Goal:
 Create the core CLI runtime and Grok integration.
 
 Deliverables:
-- Node.js + TypeScript setup
-- CLI entrypoint
-- Ink interface
-- environment config
-- Grok API integration
-- streaming responses
-- conversation state
+- [x] Node.js + TypeScript setup
+- [x] CLI entrypoint
+- [x] Ink interface
+- [x] environment config
+- [x] Grok API integration
+- [x] streaming responses
+- [x] conversation state
 
 Tasks:
 
@@ -102,16 +123,16 @@ Responsibilities:
 
 ---
 
-# Phase 2 — Tool System
+# Phase 2 — Tool System [x]
 
 Goal:
 Create a unified tool execution framework.
 
 Deliverables:
-- tool registry
-- tool execution loop
-- permission system
-- structured outputs
+- [x] tool registry
+- [x] tool execution loop
+- [x] permission system
+- [x] structured outputs
 
 Tasks:
 
@@ -130,26 +151,26 @@ interface Tool {
 ## Implement Core Tools
 
 Filesystem:
-- read_file
-- write_file
-- list_files
-- grep
+- [x] read_file
+- [x] write_file
+- [x] list_files
+- [x] grep
 
 Git:
-- git_status
-- git_diff
-- git_commit
+- [x] git_status
+- [x] git_diff
+- [x] git_commit
 
 Shell:
-- run_shell
+- [x] run_shell
 
 ---
 
 ## Add Permission System
 
 Rules:
-- passive tools auto-run
-- active tools require approval
+- [x] passive tools auto-run
+- [x] active tools require approval
 
 ---
 
@@ -166,25 +187,25 @@ Model requests tool
 
 ---
 
-# Phase 3 — Editing Engine
+# Phase 3 — Editing Engine [x]
 
 Goal:
 Create reliable code editing workflows.
 
 Deliverables:
-- patch generation
-- diff rendering
-- file application
-- rollback support
+- [x] patch generation
+- [x] diff rendering
+- [x] file application
+- [x] rollback support
 
 Tasks:
 
 ## Diff System
 
 Requirements:
-- unified diffs
-- syntax highlighting
-- partial apply support
+- [x] unified diffs
+- [x] syntax highlighting
+- [x] file-level partial apply support
 
 ---
 
@@ -201,73 +222,73 @@ Apply changes? (y/n)
 ## Rollback Support
 
 Requirements:
-- automatic backups
-- undo support
-- failed patch recovery
+- [x] automatic backups
+- [x] undo support
+- [x] failed patch recovery
 
 ---
 
-# Phase 4 — Search Tools
+# Phase 4 — Search Tools [x]
 
 Goal:
 Integrate real-time internet tools.
 
 Deliverables:
-- web search
-- X search
-- search summaries
-- citations
+- [x] web search
+- [x] X search
+- [x] search summaries
+- [x] citations
 
 Tasks:
 
 ## Web Search Tool
 
 Capabilities:
-- search docs
-- search frameworks
-- search GitHub discussions
-- fetch current information
+- [x] search docs
+- [x] search frameworks
+- [x] search GitHub discussions
+- [x] fetch current information
 
 ---
 
 ## X Search Tool
 
 Capabilities:
-- search developer conversations
-- monitor outages
-- detect breaking changes
-- summarize live incidents
+- [x] search developer conversations
+- [x] monitor outages
+- [x] detect breaking changes
+- [x] summarize live incidents
 
 ---
 
 ## Search UX
 
 Requirements:
-- show tool calls
-- show sources
-- allow expandable results
+- [x] show tool calls
+- [x] show sources in structured tool output
+- [x] allow expandable results
 
 ---
 
-# Phase 5 — Image System
+# Phase 5 — Image System [x]
 
 Goal:
 Integrate multimodal workflows.
 
 Deliverables:
-- image generation
-- image understanding
-- workspace asset management
+- [x] image generation
+- [x] image understanding
+- [x] workspace asset management
 
 Tasks:
 
 ## Image Generation
 
 Capabilities:
-- save generated assets
-- support aspect ratios
-- support variations
-- support editing
+- [x] save generated assets
+- [x] support aspect ratios
+- [x] support variations through image count
+- [x] support image editing
 
 Output directory:
 
@@ -280,72 +301,73 @@ Output directory:
 ## Image Understanding
 
 Capabilities:
-- screenshot analysis
-- design parsing
-- OCR support
-- UI recreation
+- [x] screenshot/local image analysis
+- [x] design parsing through image_understand
+- [x] OCR-style extraction through image_understand
+- [x] UI reference analysis through image_understand
 
 ---
 
 ## Clipboard + Drag-and-Drop
 
 Support:
-- pasted screenshots
-- local image files
-- drag-and-drop into terminal
+- [x] pasted screenshots as data URIs or file paths
+- [x] local image files
+- [x] drag-and-drop into terminal as inserted file paths
+- [ ] native OS clipboard image capture
 
 ---
 
-# Phase 6 — Context Engine
+# Phase 6 — Context Engine [x]
 
 Goal:
 Improve repository understanding.
 
 Deliverables:
-- smart context selection
-- token budgeting
-- summarization
+- [x] smart context selection
+- [x] token budgeting
+- [x] LLM-generated summarization
 
 Tasks:
 
 ## Repo Scanner
 
 Capabilities:
-- detect frameworks
-- detect package manager
-- identify entrypoints
-- detect recent files
+- [x] detect frameworks
+- [x] detect package manager
+- [x] identify entrypoints
+- [x] detect recent files
 
 ---
 
 ## Context Builder
 
 Rules:
-- prefer nearby files
-- prefer recent changes
-- prioritize explicit references
+- [x] prefer nearby files
+- [x] prefer recent changes
+- [x] prioritize explicit references
 
 ---
 
 ## Token Budgeting
 
 Requirements:
-- estimate tokens
-- truncate intelligently
-- summarize old context
+- [x] estimate tokens
+- [x] truncate intelligently
+- [x] summarize old context
 
 ---
 
-# Phase 7 — UX Polish
+# Phase 7 — UX Polish [ ]
 
 Goal:
 Make the CLI feel premium.
 
 Deliverables:
-- smooth streaming
-- clean layouts
-- responsive UI
-- better logging
+- [ ] smooth streaming
+- [ ] clean layouts
+- [ ] responsive UI
+- [ ] better logging
 
 Tasks:
 
@@ -377,16 +399,16 @@ Requirements:
 
 ---
 
-# Phase 8 — Packaging
+# Phase 8 — Packaging [ ]
 
 Goal:
 Ship a usable developer product.
 
 Deliverables:
-- npm package
-- install script
-- docs
-- demo repo
+- [ ] npm package
+- [ ] install script
+- [ ] docs
+- [ ] demo repo
 
 Tasks:
 
@@ -420,18 +442,11 @@ Deliver:
 
 ---
 
-# Recommended Immediate Next Steps
+# Recommended Next Steps
 
-1. Initialize Node project
-2. Configure TypeScript
-3. Create Grok API wrapper
-4. Build streaming terminal UI
-5. Add simple chat loop
-6. Add read_file tool
-7. Add write_file + diff preview
-8. Add web search
-9. Add image generation
-10. Polish UX
+1. Start Phase 7 UX polish: terminal rendering, compact/clean layouts, progress indicators, actionable errors, and debug logs.
+2. Add native OS clipboard image capture only if the terminal UI needs it.
+3. Start Phase 8 packaging after UX polish stabilizes.
 
 ---
 

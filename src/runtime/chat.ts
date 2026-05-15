@@ -1,7 +1,14 @@
 import type { GrokProvider, GrokUsage } from "../providers/grok.js";
 import type { Session } from "./session.js";
 import type { ContextBuilder } from "../context/index.js";
+import type { BuiltContext } from "../context/types.js";
 import { createPatchPreview } from "../editing/engine.js";
+import {
+  type ContextRuntimeMetadata,
+  type ConversationSummarizer,
+  type SummarizationOptions,
+  summarizeSessionIfNeeded
+} from "./summarization.js";
 import { parseToolArguments } from "../tools/args.js";
 import type {
   ParsedToolCallRequest,
@@ -17,6 +24,7 @@ import { toolFailure, type ToolApprovalDecision } from "../tools/types.js";
 export interface ChatTurnResult {
   content: string;
   usage?: GrokUsage;
+  context?: ContextRuntimeMetadata;
 }
 
 export type ToolEventStatus = "requested" | "approval_requested" | "approved" | "denied" | "running" | "completed";
@@ -42,7 +50,7 @@ export interface ToolApprovalRequest {
 
 export interface RunChatTurnOptions {
   session: Session;
-  provider: Pick<GrokProvider, "streamChat">;
+  provider: Pick<GrokProvider, "streamChat"> & Partial<ConversationSummarizer>;
   registry: ToolRegistry;
   cwd: string;
   onDelta: (delta: string) => void;
@@ -52,19 +60,37 @@ export interface RunChatTurnOptions {
   imageProvider?: ImageProviderLike;
   searchProvider?: SearchProviderLike;
   maxToolRounds?: number;
+  summarization?: Partial<SummarizationOptions>;
 }
 
 export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurnResult> {
   const maxToolRounds = options.maxToolRounds ?? 6;
   let usage: GrokUsage | undefined;
-  const contextPrompt = await buildTurnContext(options);
+  const turnContext = await buildTurnContext(options);
+  const summaryMetadata = await summarizeSessionIfNeeded(
+    options.session,
+    options.provider.summarizeConversation ? options.provider as ConversationSummarizer : undefined,
+    options.summarization
+  );
+  const contextMetadata: ContextRuntimeMetadata = {
+    ...(turnContext
+      ? {
+          repoContext: {
+            estimatedTokens: turnContext.estimatedTokens,
+            truncated: turnContext.truncated,
+            itemCount: turnContext.items.length
+          }
+        }
+      : {}),
+    conversationSummary: summaryMetadata
+  };
 
   for (let round = 0; round < maxToolRounds; round += 1) {
     let content = "";
     let toolCalls: ToolCallRequest[] = [];
 
     for await (const event of options.provider.streamChat(
-      options.session.toChatMessages(contextPrompt),
+      options.session.toChatMessages(turnContext?.prompt),
       options.registry.toChatCompletionTools()
     )) {
       if (event.type === "content" && event.content) {
@@ -85,7 +111,8 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
       options.session.addAssistantMessage(content);
       return {
         content,
-        usage
+        usage,
+        context: contextMetadata
       };
     }
 
@@ -103,11 +130,12 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
 
   return {
     content,
-    usage
+    usage,
+    context: contextMetadata
   };
 }
 
-async function buildTurnContext(options: RunChatTurnOptions): Promise<string | undefined> {
+async function buildTurnContext(options: RunChatTurnOptions): Promise<BuiltContext | undefined> {
   if (!options.contextBuilder) {
     return undefined;
   }
@@ -122,7 +150,7 @@ async function buildTurnContext(options: RunChatTurnOptions): Promise<string | u
   }
 
   const context = await options.contextBuilder.buildContext(options.cwd, latestUserMessage);
-  return context.prompt;
+  return context;
 }
 
 async function executeToolCall(
@@ -282,6 +310,17 @@ function createApprovalPreview(toolName: string, args: unknown): string {
     const count = typeof record.count === "number" ? record.count : 1;
     const details = [
       `${count} image${count === 1 ? "" : "s"}`,
+      typeof record.aspectRatio === "string" ? record.aspectRatio : undefined,
+      typeof record.resolution === "string" ? record.resolution : undefined
+    ].filter(Boolean);
+
+    return `${record.prompt}\n${details.join(", ")} -> .workspace/images`;
+  }
+
+  if (toolName === "image_edit" && typeof record.prompt === "string") {
+    const images = Array.isArray(record.images) ? record.images.length : 0;
+    const details = [
+      `${images} source image${images === 1 ? "" : "s"}`,
       typeof record.aspectRatio === "string" ? record.aspectRatio : undefined,
       typeof record.resolution === "string" ? record.resolution : undefined
     ].filter(Boolean);

@@ -7,11 +7,12 @@ import type { ImageProvider } from "../providers/images.js";
 import type { SearchProvider } from "../providers/search.js";
 import { runChatTurn, type ToolApprovalRequest, type ToolRuntimeEvent } from "../runtime/chat.js";
 import type { Session, SessionMessage } from "../runtime/session.js";
+import type { ContextRuntimeMetadata } from "../runtime/summarization.js";
 import type { ToolRegistry } from "../tools/index.js";
 import type { ToolApprovalDecision } from "../tools/types.js";
 import type { AppConfig } from "../utils/config.js";
 import { ChatInput } from "./input.js";
-import { ChatOutput } from "./output.js";
+import { ChatOutput, isExpandableSearchEvent } from "./output.js";
 
 interface AppProps {
   config: AppConfig;
@@ -33,10 +34,12 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
   const { exit } = useApp();
   const [messages, setMessages] = useState<SessionMessage[]>([...session.listMessages()]);
   const [toolEvents, setToolEvents] = useState<ToolRuntimeEvent[]>([]);
+  const [expandedToolEventIds, setExpandedToolEventIds] = useState<string[]>([]);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [usage, setUsage] = useState<GrokUsage>();
+  const [contextMetadata, setContextMetadata] = useState<ContextRuntimeMetadata>();
 
   const status = useMemo(() => {
     if (config.mock) {
@@ -50,6 +53,18 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
 
   useInput((input, key) => {
     if (!pendingApproval) {
+      if (key.tab) {
+        const latestSearchEvent = [...toolEvents].reverse().find(isExpandableSearchEvent);
+
+        if (latestSearchEvent) {
+          setExpandedToolEventIds((current) =>
+            current.includes(latestSearchEvent.id)
+              ? current.filter((id) => id !== latestSearchEvent.id)
+              : [...current, latestSearchEvent.id]
+          );
+        }
+      }
+
       return;
     }
 
@@ -124,6 +139,8 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
     setBusy(true);
     setError(undefined);
     setUsage(undefined);
+    setContextMetadata(undefined);
+    setExpandedToolEventIds([]);
 
     session.addUserMessage(value);
 
@@ -171,6 +188,7 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
 
       setMessages([...session.listMessages()]);
       setUsage(result.usage);
+      setContextMetadata(result.context);
     } catch (cause) {
       setMessages([...session.listMessages()]);
       setError(cause instanceof Error ? cause.message : "Unknown chat error.");
@@ -189,8 +207,10 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
           toolEvents={toolEvents}
           pendingApproval={pendingApproval?.request}
           selectedApprovalFiles={pendingApproval?.selectedFiles}
+          expandedToolEventIds={expandedToolEventIds}
           error={error}
           usage={usage}
+          contextMetadata={contextMetadata}
         />
       </Box>
       <Box marginTop={1}>

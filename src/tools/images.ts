@@ -1,17 +1,15 @@
-import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { getOptionalString, getString } from "./args.js";
-import { resolveWorkspacePath, toWorkspaceRelativePath } from "./path.js";
+import { normalizeImageSource } from "./image-source.js";
 import { toolFailure, type Tool } from "./types.js";
 
 const IMAGE_DIRECTORY = ".workspace/images";
 const ASPECT_RATIOS = new Set(["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2", "19.5:9", "9:19.5", "20:9", "9:20", "auto"]);
 const RESOLUTIONS = new Set(["1k", "2k"]);
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export function createImageTools(): Tool[] {
-  return [imageGenerateTool, imageUnderstandTool];
+  return [imageGenerateTool, imageEditTool, imageUnderstandTool];
 }
 
 const imageGenerateTool: Tool = {
@@ -77,6 +75,82 @@ const imageGenerateTool: Tool = {
   }
 };
 
+const imageEditTool: Tool = {
+  name: "image_edit",
+  description: "Edit one to three source images with Grok Imagine and save results under .workspace/images after approval.",
+  permission: "active",
+  parameters: {
+    type: "object",
+    properties: {
+      prompt: {
+        type: "string",
+        description: "Natural language edit instruction."
+      },
+      images: {
+        type: "array",
+        description: "One to three image sources. Each source can be a workspace path, public URL, file URL, or image data URI.",
+        items: { type: "string" }
+      },
+      aspectRatio: {
+        type: "string",
+        description: "Optional output aspect ratio for multi-image edits, such as 1:1, 16:9, 9:16, or auto."
+      },
+      resolution: {
+        type: "string",
+        description: "Optional output resolution. Supported values are 1k and 2k."
+      }
+    },
+    required: ["prompt", "images"],
+    additionalProperties: false
+  },
+  async execute(args, context) {
+    const prompt = getString(args, "prompt");
+    const images = getStringArray(args, "images");
+
+    if (!prompt || !images) {
+      return toolFailure("image_edit", "invalid_arguments", "image_edit requires string prompt and images array.");
+    }
+
+    if (images.length < 1 || images.length > 3) {
+      return toolFailure("image_edit", "invalid_arguments", "image_edit requires one to three source images.");
+    }
+
+    const aspectRatio = getOptionalString(args, "aspectRatio");
+    if (aspectRatio && !ASPECT_RATIOS.has(aspectRatio)) {
+      return toolFailure("image_edit", "invalid_arguments", "Unsupported aspectRatio.");
+    }
+
+    const resolution = getOptionalString(args, "resolution");
+    if (resolution && !RESOLUTIONS.has(resolution)) {
+      return toolFailure("image_edit", "invalid_arguments", "resolution must be 1k or 2k.");
+    }
+
+    if (!context.imageProvider) {
+      return toolFailure("image_edit", "missing_api_key", "Image provider is unavailable. Check XAI_API_KEY configuration.");
+    }
+
+    const normalizedImages = [];
+
+    for (const image of images) {
+      const normalized = await normalizeImageSource(context.cwd, image);
+
+      if (!normalized.ok) {
+        return toolFailure("image_edit", normalized.code, normalized.message);
+      }
+
+      normalizedImages.push(normalized.value);
+    }
+
+    return context.imageProvider.editImage({
+      prompt,
+      images: normalizedImages,
+      ...(aspectRatio ? { aspectRatio } : {}),
+      ...(resolution ? { resolution } : {}),
+      outputDirectory: path.join(context.cwd, IMAGE_DIRECTORY)
+    });
+  }
+};
+
 const imageUnderstandTool: Tool = {
   name: "image_understand",
   description: "Analyze a local image file or public image URL with Grok vision and return a concise summary.",
@@ -112,50 +186,17 @@ const imageUnderstandTool: Tool = {
       return toolFailure("image_understand", "missing_api_key", "Image provider is unavailable. Check XAI_API_KEY configuration.");
     }
 
-    if (imageUrl) {
-      return context.imageProvider.understandImage({
-        prompt,
-        imageUrl,
-        source: {
-          type: "url"
-        }
-      });
+    const normalized = await normalizeImageSource(context.cwd, imageUrl ?? requestedPath ?? "");
+
+    if (!normalized.ok) {
+      return toolFailure("image_understand", normalized.code, normalized.message);
     }
 
-    const resolved = resolveWorkspacePath(context.cwd, requestedPath ?? "");
-    if (!resolved.ok) {
-      return toolFailure("image_understand", "path_outside_workspace", resolved.error);
-    }
-
-    try {
-      const fileStat = await stat(resolved.path);
-      if (!fileStat.isFile()) {
-        return toolFailure("image_understand", "invalid_image", "Image path must point to a file.");
-      }
-
-      if (fileStat.size > MAX_IMAGE_BYTES) {
-        return toolFailure("image_understand", "image_too_large", "Image files over 20MB are not supported in Phase 5.");
-      }
-
-      const buffer = await readFile(resolved.path);
-      const mime = mimeTypeForPath(resolved.path);
-
-      if (!mime) {
-        return toolFailure("image_understand", "unsupported_image_type", "Supported image types are PNG, JPEG, WebP, and GIF.");
-      }
-
-      return context.imageProvider.understandImage({
-        prompt,
-        imageUrl: `data:${mime};base64,${buffer.toString("base64")}`,
-        source: {
-          type: "file",
-          path: toWorkspaceRelativePath(context.cwd, resolved.path),
-          size: fileStat.size
-        }
-      });
-    } catch (cause) {
-      return toolFailure("image_understand", "image_read_failed", cause instanceof Error ? cause.message : String(cause));
-    }
+    return context.imageProvider.understandImage({
+      prompt,
+      imageUrl: normalized.value.imageUrl,
+      source: normalized.value.source
+    });
   }
 };
 
@@ -168,24 +209,11 @@ function getOptionalNumber(args: unknown, key: string): number | undefined {
   return value === undefined || typeof value === "number" ? value : undefined;
 }
 
-function mimeTypeForPath(filePath: string): string | undefined {
-  const extension = path.extname(filePath).toLowerCase();
-
-  if (extension === ".png") {
-    return "image/png";
+function getStringArray(args: unknown, key: string): string[] | undefined {
+  if (typeof args !== "object" || args === null || Array.isArray(args)) {
+    return undefined;
   }
 
-  if (extension === ".jpg" || extension === ".jpeg") {
-    return "image/jpeg";
-  }
-
-  if (extension === ".webp") {
-    return "image/webp";
-  }
-
-  if (extension === ".gif") {
-    return "image/gif";
-  }
-
-  return undefined;
+  const value = (args as Record<string, unknown>)[key];
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
 }

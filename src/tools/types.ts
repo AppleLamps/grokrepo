@@ -34,6 +34,7 @@ export interface SearchProviderLike {
 
 export interface ImageProviderLike {
   generateImage(args: unknown): Promise<ToolExecutionResult>;
+  editImage(args: unknown): Promise<ToolExecutionResult>;
   understandImage(args: unknown): Promise<ToolExecutionResult>;
 }
 

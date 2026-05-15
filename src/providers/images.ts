@@ -29,11 +29,30 @@ export interface ImageGenerationOutput {
   images: GeneratedImage[];
 }
 
+export interface ImageEditRequest {
+  prompt: string;
+  images: Array<{
+    imageUrl: string;
+    source: {
+      type: "url" | "file" | "data_uri";
+      path?: string;
+      size?: number;
+    };
+  }>;
+  aspectRatio?: string;
+  resolution?: "1k" | "2k";
+  outputDirectory: string;
+}
+
+export interface ImageEditOutput extends ImageGenerationOutput {
+  sources: ImageEditRequest["images"][number]["source"][];
+}
+
 export interface ImageUnderstandingRequest {
   prompt: string;
   imageUrl: string;
   source: {
-    type: "url" | "file";
+    type: "url" | "file" | "data_uri";
     path?: string;
     size?: number;
   };
@@ -160,9 +179,157 @@ export class ImageProvider {
       return imageFailure("image_understand", "image_understanding_failed", errorMessage(cause));
     }
   }
+
+  async editImage(args: unknown): Promise<ToolExecutionResult<ImageEditOutput>> {
+    const request = args as ImageEditRequest;
+
+    if (!this.config.apiKey) {
+      return imageFailure("image_edit", "missing_api_key", "Missing XAI_API_KEY. Add it to .env before editing images.");
+    }
+
+    try {
+      await mkdir(request.outputDirectory, { recursive: true });
+
+      const response = await fetch(buildUrl(this.config.baseUrl, "images/edits"), {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.config.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(buildImageEditBody(this.config.imageModel, request))
+      });
+
+      if (!response.ok) {
+        return imageFailure("image_edit", "image_edit_failed", `${response.status} ${await response.text()}`);
+      }
+
+      const body = await response.json() as ImagesResponse;
+      const images = await saveImageResponse(body, request.outputDirectory, request.prompt);
+
+      if (images.length === 0) {
+        return imageFailure("image_edit", "empty_response", "Image edit returned no image data.");
+      }
+
+      return toolSuccess("image_edit", {
+        prompt: request.prompt,
+        model: this.config.imageModel,
+        images,
+        sources: request.images.map((image) => image.source)
+      });
+    } catch (cause) {
+      return imageFailure("image_edit", "image_edit_failed", errorMessage(cause));
+    }
+  }
 }
 
-function createImageFileName(prompt: string, index: number): string {
+export function buildImageEditBody(model: string, request: ImageEditRequest): Record<string, unknown> {
+  const imagePayload = request.images.map((image) => ({
+    url: image.imageUrl,
+    type: "image_url"
+  }));
+
+  return {
+    model,
+    prompt: request.prompt,
+    image: imagePayload.length === 1 ? imagePayload[0] : imagePayload,
+    response_format: "b64_json",
+    ...(request.aspectRatio ? { aspect_ratio: request.aspectRatio } : {}),
+    ...(request.resolution ? { resolution: request.resolution } : {})
+  };
+}
+
+function buildUrl(baseUrl: string, endpoint: string): string {
+  return new URL(endpoint, `${baseUrl.replace(/\/$/, "")}/`).toString();
+}
+
+async function saveBase64Images(response: ImagesResponse, outputDirectory: string, prompt: string): Promise<GeneratedImage[]> {
+  return saveImageResponse(response, outputDirectory, prompt, { allowUrlDownload: false });
+}
+
+async function saveImageResponse(
+  response: ImagesResponse,
+  outputDirectory: string,
+  prompt: string,
+  options: { allowUrlDownload?: boolean } = { allowUrlDownload: true }
+): Promise<GeneratedImage[]> {
+  const images: GeneratedImage[] = [];
+
+  for (const [index, image] of (response.data ?? []).entries()) {
+    const item = image as { b64_json?: string; url?: string; model?: string };
+    const saved = item.b64_json
+      ? await saveBase64Image(item.b64_json, outputDirectory, prompt, index)
+      : options.allowUrlDownload && item.url
+        ? await saveRemoteImage(item.url, outputDirectory, prompt, index)
+        : undefined;
+
+    if (!saved) {
+      continue;
+    }
+
+    images.push({
+      path: saved.path,
+      bytes: saved.bytes,
+      index,
+      model: item.model
+    });
+  }
+
+  return images;
+}
+
+async function saveBase64Image(
+  base64: string,
+  outputDirectory: string,
+  prompt: string,
+  index: number,
+  extension = "jpg"
+): Promise<{ path: string; bytes: number }> {
+  const bytes = Buffer.from(base64, "base64");
+  const absolutePath = path.join(outputDirectory, createImageFileName(prompt, index, extension));
+  await writeFile(absolutePath, bytes);
+
+  return {
+    path: absolutePath,
+    bytes: bytes.byteLength
+  };
+}
+
+async function saveRemoteImage(url: string, outputDirectory: string, prompt: string, index: number): Promise<{ path: string; bytes: number }> {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Failed to download edited image: ${response.status} ${await response.text()}`);
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const extension = extensionFromContentType(contentType);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const absolutePath = path.join(outputDirectory, createImageFileName(prompt, index, extension));
+  await writeFile(absolutePath, bytes);
+
+  return {
+    path: absolutePath,
+    bytes: bytes.byteLength
+  };
+}
+
+function extensionFromContentType(contentType: string): string {
+  if (contentType.includes("png")) {
+    return "png";
+  }
+
+  if (contentType.includes("webp")) {
+    return "webp";
+  }
+
+  if (contentType.includes("gif")) {
+    return "gif";
+  }
+
+  return "jpg";
+}
+
+function createImageFileName(prompt: string, index: number, extension = "jpg"): string {
   const slug = prompt
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -170,7 +337,7 @@ function createImageFileName(prompt: string, index: number): string {
     .slice(0, 48) || "image";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 
-  return `${stamp}-${slug}-${index + 1}.jpg`;
+  return `${stamp}-${slug}-${index + 1}.${extension}`;
 }
 
 function imageFailure<TOutput>(tool: string, code: string, message: string): ToolExecutionResult<TOutput> {
