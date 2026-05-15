@@ -8,6 +8,7 @@ import type {
   ToolCallRequest,
   ToolExecutionResult,
   ToolRegistry,
+  ImageProviderLike,
   SearchProviderLike
 } from "../tools/index.js";
 import { toolFailure, type ToolApprovalDecision } from "../tools/types.js";
@@ -46,6 +47,7 @@ export interface RunChatTurnOptions {
   onDelta: (delta: string) => void;
   onToolEvent?: (event: ToolRuntimeEvent) => void;
   requestApproval: (request: ToolApprovalRequest) => Promise<boolean | ToolApprovalDecision>;
+  imageProvider?: ImageProviderLike;
   searchProvider?: SearchProviderLike;
   maxToolRounds?: number;
 }
@@ -194,6 +196,7 @@ async function executeToolCall(
   const result = await tool.execute(parsed.value, {
     cwd: options.cwd,
     approval,
+    imageProvider: options.imageProvider,
     searchProvider: options.searchProvider
   });
 
@@ -252,6 +255,17 @@ function createApprovalPreview(toolName: string, args: unknown): string {
 
   if (toolName === "git_commit" && typeof record.message === "string") {
     return record.message;
+  }
+
+  if (toolName === "image_generate" && typeof record.prompt === "string") {
+    const count = typeof record.count === "number" ? record.count : 1;
+    const details = [
+      `${count} image${count === 1 ? "" : "s"}`,
+      typeof record.aspectRatio === "string" ? record.aspectRatio : undefined,
+      typeof record.resolution === "string" ? record.resolution : undefined
+    ].filter(Boolean);
+
+    return `${record.prompt}\n${details.join(", ")} -> .workspace/images`;
   }
 
   return JSON.stringify(args);

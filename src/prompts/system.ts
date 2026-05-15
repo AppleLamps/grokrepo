@@ -27,4 +27,10 @@ Phase 4 search status:
 - Use x_search for live developer/social discussion, outages, breaking changes, unofficial fixes, and X posts.
 - Search tools are passive and may run automatically.
 - Include citations from search tool results when summarizing current information.
+
+Phase 5 image status:
+- Use image_understand for screenshots, local image files, UI references, diagrams, OCR-style extraction, and visual debugging.
+- Use image_generate for requested visual assets, hero images, placeholders, Open Graph images, icons, and illustrations.
+- image_understand is passive. image_generate is active and requires explicit approval before saving files.
+- Generated images are saved under .workspace/images.
 `;

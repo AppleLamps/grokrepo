@@ -2,6 +2,7 @@ import { Box, Text, useApp, useInput } from "ink";
 import { useMemo, useState } from "react";
 
 import { GrokProvider, type GrokUsage } from "../providers/grok.js";
+import type { ImageProvider } from "../providers/images.js";
 import type { SearchProvider } from "../providers/search.js";
 import { runChatTurn, type ToolApprovalRequest, type ToolRuntimeEvent } from "../runtime/chat.js";
 import type { Session, SessionMessage } from "../runtime/session.js";
@@ -14,6 +15,7 @@ import { ChatOutput } from "./output.js";
 interface AppProps {
   config: AppConfig;
   provider: GrokProvider;
+  imageProvider: ImageProvider;
   registry: ToolRegistry;
   searchProvider: SearchProvider;
   session: Session;
@@ -25,7 +27,7 @@ interface PendingApproval {
   selectedFiles: string[];
 }
 
-export function App({ config, provider, registry, searchProvider, session }: AppProps) {
+export function App({ config, provider, imageProvider, registry, searchProvider, session }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<SessionMessage[]>([...session.listMessages()]);
   const [toolEvents, setToolEvents] = useState<ToolRuntimeEvent[]>([]);
@@ -135,6 +137,7 @@ export function App({ config, provider, registry, searchProvider, session }: App
       const result = await runChatTurn({
         session,
         provider,
+        imageProvider,
         registry,
         searchProvider,
         cwd: process.cwd(),
@@ -176,7 +179,7 @@ export function App({ config, provider, registry, searchProvider, session }: App
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text color="cyan">GrokCode</Text>
-      <Text color="gray">Phase 4 search runtime, {status}. Type /exit to quit.</Text>
+      <Text color="gray">Phase 5 image runtime, {status}. Type /exit to quit.</Text>
       <Box marginTop={1} flexDirection="column">
         <ChatOutput
           messages={messages}

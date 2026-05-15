@@ -24,11 +24,17 @@ export interface ToolExecutionContext {
   cwd: string;
   approval?: ToolApprovalDecision;
   searchProvider?: SearchProviderLike;
+  imageProvider?: ImageProviderLike;
 }
 
 export interface SearchProviderLike {
   runWebSearch(args: unknown): Promise<ToolExecutionResult>;
   runXSearch(args: unknown): Promise<ToolExecutionResult>;
+}
+
+export interface ImageProviderLike {
+  generateImage(args: unknown): Promise<ToolExecutionResult>;
+  understandImage(args: unknown): Promise<ToolExecutionResult>;
 }
 
 export interface ToolApprovalDecision {

@@ -9,7 +9,7 @@ import type { GrokStreamDelta } from "../src/providers/grok.js";
 import { runChatTurn } from "../src/runtime/chat.js";
 import { Session } from "../src/runtime/session.js";
 import { ToolRegistry } from "../src/tools/registry.js";
-import { toolSuccess, type SearchProviderLike, type Tool } from "../src/tools/types.js";
+import { toolSuccess, type ImageProviderLike, type SearchProviderLike, type Tool } from "../src/tools/types.js";
 
 class ScriptedProvider {
   readonly messages: ChatCompletionMessageParam[][] = [];
@@ -264,6 +264,90 @@ test("x_search tool call executes and final response continues", async () => {
   assert.match(session.listMessages().find((message) => message.role === "tool")?.content ?? "", /x result/);
 });
 
+test("image_understand tool call executes and final response continues", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const imageProvider = createImageProvider();
+
+  registry.register({
+    name: "image_understand",
+    description: "understand image",
+    permission: "passive",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    execute: (_args, context) =>
+      context.imageProvider?.understandImage({ imageUrl: "https://example.com/a.png", prompt: "describe" }) ??
+      Promise.resolve(toolSuccess("image_understand", {}))
+  });
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "image_understand", arguments: "{\"imageUrl\":\"https://example.com/a.png\"}" }] }],
+    [{ type: "content", content: "image handled" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("look at image");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    imageProvider,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  assert.equal(result.content, "image handled");
+  assert.match(session.listMessages().find((message) => message.role === "tool")?.content ?? "", /image result/);
+});
+
+test("image_generate approval executes once and final response continues", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const imageProvider = createImageProvider();
+  let approvals = 0;
+
+  registry.register({
+    name: "image_generate",
+    description: "generate image",
+    permission: "active",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    execute: (_args, context) =>
+      context.imageProvider?.generateImage({ prompt: "asset" }) ?? Promise.resolve(toolSuccess("image_generate", {}))
+  });
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "image_generate", arguments: "{\"prompt\":\"asset\"}" }] }],
+    [{ type: "content", content: "image generated" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("make image");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    imageProvider,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => {
+      approvals += 1;
+      return true;
+    }
+  });
+
+  assert.equal(approvals, 1);
+  assert.equal(result.content, "image generated");
+  assert.match(session.listMessages().find((message) => message.role === "tool")?.content ?? "", /generated image/);
+});
+
 function createTool(
   name: string,
   permission: "passive" | "active",
@@ -298,6 +382,26 @@ function createSearchProvider(): SearchProviderLike {
         summary: "x result",
         citations: [],
         usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 }
+      });
+    }
+  };
+}
+
+function createImageProvider(): ImageProviderLike {
+  return {
+    async generateImage() {
+      return toolSuccess("image_generate", {
+        prompt: "asset",
+        model: "grok-imagine-image-quality",
+        images: [{ path: ".workspace/images/asset.jpg", bytes: 10, index: 0 }],
+        summary: "generated image"
+      });
+    },
+    async understandImage() {
+      return toolSuccess("image_understand", {
+        prompt: "describe",
+        summary: "image result",
+        source: { type: "url" }
       });
     }
   };

@@ -102,6 +102,7 @@ test("SearchProvider returns missing_api_key when API key is absent", async () =
   const provider = new SearchProvider({
     baseUrl: "https://api.x.ai/v1",
     model: "grok-4.3",
+    imageModel: "grok-imagine-image-quality",
     mock: false
   });
 

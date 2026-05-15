@@ -22,6 +22,8 @@ test("default registry exposes Phase 2 tools with expected permissions", () => {
   assert.equal(registry.get("undo_patch")?.permission, "active");
   assert.equal(registry.get("web_search")?.permission, "passive");
   assert.equal(registry.get("x_search")?.permission, "passive");
+  assert.equal(registry.get("image_generate")?.permission, "active");
+  assert.equal(registry.get("image_understand")?.permission, "passive");
 });
 
 test("registry rejects duplicate tool names", () => {
