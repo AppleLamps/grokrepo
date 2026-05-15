@@ -7,7 +7,8 @@ import type {
   Tool,
   ToolCallRequest,
   ToolExecutionResult,
-  ToolRegistry
+  ToolRegistry,
+  SearchProviderLike
 } from "../tools/index.js";
 import { toolFailure, type ToolApprovalDecision } from "../tools/types.js";
 
@@ -45,6 +46,7 @@ export interface RunChatTurnOptions {
   onDelta: (delta: string) => void;
   onToolEvent?: (event: ToolRuntimeEvent) => void;
   requestApproval: (request: ToolApprovalRequest) => Promise<boolean | ToolApprovalDecision>;
+  searchProvider?: SearchProviderLike;
   maxToolRounds?: number;
 }
 
@@ -189,7 +191,11 @@ async function executeToolCall(
     args: parsed.value
   });
 
-  const result = await tool.execute(parsed.value, { cwd: options.cwd, approval });
+  const result = await tool.execute(parsed.value, {
+    cwd: options.cwd,
+    approval,
+    searchProvider: options.searchProvider
+  });
 
   options.onToolEvent?.({
     id: call.id,

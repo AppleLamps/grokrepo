@@ -9,7 +9,7 @@ import type { GrokStreamDelta } from "../src/providers/grok.js";
 import { runChatTurn } from "../src/runtime/chat.js";
 import { Session } from "../src/runtime/session.js";
 import { ToolRegistry } from "../src/tools/registry.js";
-import { toolSuccess, type Tool } from "../src/tools/types.js";
+import { toolSuccess, type SearchProviderLike, type Tool } from "../src/tools/types.js";
 
 class ScriptedProvider {
   readonly messages: ChatCompletionMessageParam[][] = [];
@@ -188,6 +188,82 @@ test("tool loop stops at configured max round limit", async () => {
   assert.equal(provider.messages.length, 1);
 });
 
+test("web_search tool call executes and final response continues", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const searchProvider = createSearchProvider();
+
+  registry.register({
+    name: "web_search",
+    description: "search",
+    permission: "passive",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    execute: (_args, context) => context.searchProvider?.runWebSearch({ query: "docs" }) ?? Promise.resolve(toolSuccess("web_search", {}))
+  });
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "web_search", arguments: "{\"query\":\"docs\"}" }] }],
+    [{ type: "content", content: "searched" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("search web");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    searchProvider,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  assert.equal(result.content, "searched");
+  assert.match(session.listMessages().find((message) => message.role === "tool")?.content ?? "", /web result/);
+});
+
+test("x_search tool call executes and final response continues", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const searchProvider = createSearchProvider();
+
+  registry.register({
+    name: "x_search",
+    description: "search x",
+    permission: "passive",
+    parameters: {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    },
+    execute: (_args, context) => context.searchProvider?.runXSearch({ query: "x" }) ?? Promise.resolve(toolSuccess("x_search", {}))
+  });
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "x_search", arguments: "{\"query\":\"x\"}" }] }],
+    [{ type: "content", content: "x searched" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("search x");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    searchProvider,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  assert.equal(result.content, "x searched");
+  assert.match(session.listMessages().find((message) => message.role === "tool")?.content ?? "", /x result/);
+});
+
 function createTool(
   name: string,
   permission: "passive" | "active",
@@ -203,5 +279,26 @@ function createTool(
       additionalProperties: false
     },
     execute
+  };
+}
+
+function createSearchProvider(): SearchProviderLike {
+  return {
+    async runWebSearch() {
+      return toolSuccess("web_search", {
+        query: "docs",
+        summary: "web result",
+        citations: [],
+        usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 }
+      });
+    },
+    async runXSearch() {
+      return toolSuccess("x_search", {
+        query: "x",
+        summary: "x result",
+        citations: [],
+        usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 }
+      });
+    }
   };
 }

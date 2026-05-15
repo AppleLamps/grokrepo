@@ -35,6 +35,18 @@ export function ChatInput({ disabled, onSubmit }: ChatInputProps) {
       return;
     }
 
+    if (input.includes("\r") || input.includes("\n")) {
+      const [beforeBreak, ...afterBreak] = input.split(/\r?\n|\r/);
+      const nextValue = `${value}${beforeBreak}`.trim();
+
+      if (nextValue.length > 0) {
+        onSubmit(nextValue);
+        setValue(afterBreak.join(""));
+      }
+
+      return;
+    }
+
     if (input && !key.ctrl && !key.meta) {
       setValue((current) => `${current}${input}`);
     }

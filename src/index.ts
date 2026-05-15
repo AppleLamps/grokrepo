@@ -6,6 +6,7 @@ import React from "react";
 
 import { App } from "./cli/app.js";
 import { GrokProvider } from "./providers/grok.js";
+import { SearchProvider } from "./providers/search.js";
 import { Session } from "./runtime/session.js";
 import { createDefaultToolRegistry } from "./tools/index.js";
 import { loadConfig } from "./utils/config.js";
@@ -13,10 +14,11 @@ import { loadConfig } from "./utils/config.js";
 async function main(): Promise<void> {
   const config = loadConfig();
   const provider = new GrokProvider(config);
+  const searchProvider = new SearchProvider(config);
   const session = new Session();
   const registry = createDefaultToolRegistry();
 
-  const instance = render(React.createElement(App, { config, provider, registry, session }));
+  const instance = render(React.createElement(App, { config, provider, registry, searchProvider, session }));
 
   const shutdown = (): void => {
     instance.unmount();

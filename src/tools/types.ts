@@ -23,6 +23,12 @@ export interface JsonSchema {
 export interface ToolExecutionContext {
   cwd: string;
   approval?: ToolApprovalDecision;
+  searchProvider?: SearchProviderLike;
+}
+
+export interface SearchProviderLike {
+  runWebSearch(args: unknown): Promise<ToolExecutionResult>;
+  runXSearch(args: unknown): Promise<ToolExecutionResult>;
 }
 
 export interface ToolApprovalDecision {

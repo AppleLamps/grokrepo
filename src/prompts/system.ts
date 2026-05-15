@@ -21,4 +21,10 @@ Phase 3 editing status:
 - Use write_file only for clearly new/generated files or exact full-file replacement.
 - Patches must be unified diffs with workspace-relative paths.
 - The user can approve all files, skip all files, or approve a subset of files.
+
+Phase 4 search status:
+- Use web_search for current facts, documentation lookup, framework changes, external sources, and live web information.
+- Use x_search for live developer/social discussion, outages, breaking changes, unofficial fixes, and X posts.
+- Search tools are passive and may run automatically.
+- Include citations from search tool results when summarizing current information.
 `;

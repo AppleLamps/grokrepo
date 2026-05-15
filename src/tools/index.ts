@@ -2,12 +2,19 @@ import { createEditingTools } from "./editing.js";
 import { createFilesystemTools } from "./filesystem.js";
 import { createGitTools } from "./git.js";
 import { ToolRegistry } from "./registry.js";
+import { createSearchTools } from "./search.js";
 import { createShellTools } from "./shell.js";
 
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
 
-  for (const tool of [...createFilesystemTools(), ...createGitTools(), ...createShellTools(), ...createEditingTools()]) {
+  for (const tool of [
+    ...createFilesystemTools(),
+    ...createGitTools(),
+    ...createShellTools(),
+    ...createEditingTools(),
+    ...createSearchTools()
+  ]) {
     registry.register(tool);
   }
 
@@ -21,5 +28,6 @@ export type {
   ToolCallRequest,
   ToolExecutionContext,
   ToolExecutionResult,
-  ToolPermission
+  ToolPermission,
+  SearchProviderLike
 } from "./types.js";
