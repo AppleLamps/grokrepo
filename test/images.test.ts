@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { buildImageEditBody, ImageProvider } from "../src/providers/images.js";
+import { captureClipboardImage } from "../src/tools/clipboard-image.js";
 import { normalizeImageInput, normalizeImageSource } from "../src/tools/image-source.js";
 import { createDefaultToolRegistry } from "../src/tools/index.js";
 import { toolSuccess, type ImageProviderLike } from "../src/tools/types.js";
@@ -20,6 +21,7 @@ test("image tools are registered with expected permissions", () => {
   assert.equal(registry.get("image_generate")?.permission, "active");
   assert.equal(registry.get("image_edit")?.permission, "active");
   assert.equal(registry.get("image_understand")?.permission, "passive");
+  assert.equal(registry.get("capture_clipboard_image")?.permission, "active");
 });
 
 test("image_generate validates count and resolution", async () => {
@@ -379,6 +381,52 @@ test("ImageProvider writes generated base64 images", async () => {
   const image = result.output?.images[0];
   assert.ok(image);
   assert.equal(await readFile(image.path).then((content) => content.equals(ONE_PIXEL_PNG)), true);
+});
+
+test("captureClipboardImage returns unsupported on non-Windows platforms", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-images-"));
+
+  const result = await captureClipboardImage(cwd, { platform: "linux" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error?.code, "unsupported_platform");
+});
+
+test("captureClipboardImage saves mocked Windows clipboard image output", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-images-"));
+  const fileName = "clipboard-test.png";
+
+  const result = await captureClipboardImage(cwd, {
+    platform: "win32",
+    fileName,
+    async runCommand() {
+      const outputPath = path.join(cwd, ".workspace", "images", fileName);
+      await mkdir(path.dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, ONE_PIXEL_PNG);
+      return { stdout: outputPath, stderr: "", exitCode: 0 };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.output, {
+    path: ".workspace/images/clipboard-test.png",
+    bytes: ONE_PIXEL_PNG.byteLength,
+    platform: "win32"
+  });
+});
+
+test("captureClipboardImage maps empty clipboard failures", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-images-"));
+
+  const result = await captureClipboardImage(cwd, {
+    platform: "win32",
+    async runCommand() {
+      return { stdout: "", stderr: "clipboard_no_image", exitCode: 3 };
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error?.code, "clipboard_empty");
 });
 
 function createImageProvider(): ImageProviderLike {

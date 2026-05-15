@@ -36,6 +36,7 @@ Useful controls:
 ```text
 /debug
 /retry
+/clip describe this screenshot
 Tab
 Up and Down
 Left and Right

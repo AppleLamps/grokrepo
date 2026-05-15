@@ -10,7 +10,7 @@ Current local build:
 
 - Phases 1 through 7 are complete.
 - Phase 8 packaging is implemented locally and still needs npm publish plus optional demo media.
-- Latest verified suite: `npm run build` passed and `npm test` passed with 115 tests.
+- Latest verified suite: `npm run build` passed and `npm test` passed with 118 tests.
 
 ## Install
 
@@ -68,6 +68,7 @@ Inside the terminal UI:
 - `/exit` or `/quit`: close the app.
 - `/retry`: retry the last submitted prompt.
 - `/debug`: show or hide recent debug log entries.
+- `/clip [prompt]`: capture the current Windows clipboard image, save it, and ask GrokCode to analyze it.
 - `Tab`: expand or collapse the latest search result details.
 - `Up` and `Down`: navigate command history.
 - `Left` and `Right`: move within the current input.
@@ -110,6 +111,7 @@ GrokCode currently includes:
 - image understanding
 - image generation
 - image editing
+- native Windows clipboard image capture
 - terminal UI themes
 - debug logs and in-terminal debug viewing
 
@@ -137,6 +139,7 @@ Active tools require explicit approval:
 - `undo_patch`
 - `image_generate`
 - `image_edit`
+- `capture_clipboard_image`
 
 See `tools.md` for the full tool reference.
 
@@ -170,8 +173,9 @@ Image tools use Grok vision and Grok Imagine:
 - `image_understand`: local image paths, public URLs, file URLs, and image data URIs.
 - `image_generate`: approved generation saved under `.workspace/images`.
 - `image_edit`: approved edits to one to three source images saved under `.workspace/images`.
+- `capture_clipboard_image`: approved native Windows clipboard bitmap capture saved under `.workspace/images`.
 
-Terminal drag and paste workflows are supported when the terminal inserts a file path, file URL, or data URI.
+Terminal drag and paste workflows are supported when the terminal inserts a file path, file URL, or data URI. On Windows, `/clip` captures the current bitmap image from the OS clipboard and saves it as a PNG.
 
 ## Context Engine
 

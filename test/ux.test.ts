@@ -190,6 +190,16 @@ test("compactToolSummary covers core tool result branches", () => {
       },
       "logo, 1 image"
     ],
+    [
+      {
+        id: "clip",
+        tool: "capture_clipboard_image",
+        permission: "active",
+        status: "completed",
+        result: { ok: true, tool: "capture_clipboard_image", output: { path: ".workspace/images/clip.png", bytes: 100 } }
+      },
+      "clipboard -> .workspace/images/clip.png (100 bytes)"
+    ],
     [{ id: "unknown", tool: "unknown_tool", permission: "passive", status: "completed" }, "passive tool"]
   ];
 
@@ -273,7 +283,7 @@ test("composer disabled state renders as waiting", () => {
   assert.deepEqual(composerState(false), {
     prompt: ">  ",
     cursor: "_",
-    hint: "/exit /retry /debug arrows edit history ctrl+a/e/u/k/w"
+    hint: "/exit /retry /debug /clip arrows edit history ctrl+a/e/u/k/w"
   });
 });
 

@@ -90,6 +90,8 @@ export function compactToolSummary(event: ToolRuntimeEvent): string {
     case "image_edit":
     case "image_understand":
       return imageSummary(args, output);
+    case "capture_clipboard_image":
+      return clipboardSummary(output);
     default:
       return event.permission ? `${event.permission} tool` : "tool call";
   }
@@ -123,6 +125,12 @@ function imageSummary(args: Record<string, unknown>, output: Record<string, unkn
   const prompt = typeof output.prompt === "string" ? output.prompt : typeof args.prompt === "string" ? args.prompt : "image";
   const images = Array.isArray(output.images) ? `, ${output.images.length} image${output.images.length === 1 ? "" : "s"}` : "";
   return `${truncateEnd(prompt, 72)}${images}`;
+}
+
+function clipboardSummary(output: Record<string, unknown>): string {
+  const savedPath = typeof output.path === "string" ? output.path : ".workspace/images";
+  const size = typeof output.bytes === "number" ? ` (${output.bytes} bytes)` : "";
+  return `clipboard -> ${savedPath}${size}`;
 }
 
 function byteCount(value: unknown): number {

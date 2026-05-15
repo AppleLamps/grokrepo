@@ -14,7 +14,7 @@ This runs the test suite, builds `dist/`, and runs `npm pack --dry-run`.
 Current verified local result:
 
 - `npm run build` passed.
-- `npm test` passed with 115 tests.
+- `npm test` passed with 118 tests.
 - `npm run verify:package` passed during Phase 8 packaging.
 
 ## Publish
@@ -71,3 +71,5 @@ GROKCODE_MOCK=false
 ```
 
 Debug mode writes redacted logs to `.workspace/logs/grokcode-debug.log`. The CLI can show recent log entries with `/debug`.
+
+On Windows, `/clip` captures a bitmap image from the native OS clipboard into `.workspace/images` and then submits it for analysis.

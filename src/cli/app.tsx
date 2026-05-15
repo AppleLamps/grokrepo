@@ -8,6 +8,7 @@ import type { SearchProvider } from "../providers/search.js";
 import { runChatTurn, type ToolApprovalRequest, type ToolRuntimeEvent } from "../runtime/chat.js";
 import type { Session, SessionMessage } from "../runtime/session.js";
 import type { ContextRuntimeMetadata } from "../runtime/summarization.js";
+import { captureClipboardImage } from "../tools/clipboard-image.js";
 import type { ToolRegistry } from "../tools/index.js";
 import type { ToolApprovalDecision } from "../tools/types.js";
 import type { AppConfig } from "../utils/config.js";
@@ -152,6 +153,16 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
       return;
     }
 
+    if (value === "/clip" || value.startsWith("/clip ")) {
+      await handleClipboardImage(value.slice("/clip".length).trim());
+      return;
+    }
+
+    if (value === "/clipboard-image" || value.startsWith("/clipboard-image ")) {
+      await handleClipboardImage(value.slice("/clipboard-image".length).trim());
+      return;
+    }
+
     if (value === "/retry") {
       if (!lastSubmittedValue) {
         setError("Nothing to retry yet.");
@@ -164,6 +175,31 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
     }
 
     await submitChat(value, { retry: false });
+  }
+
+  async function handleClipboardImage(prompt: string): Promise<void> {
+    setBusy(true);
+    setError(undefined);
+    void writeDebugLog(process.cwd(), config.debug, "clipboard.capture_requested", { prompt });
+
+    try {
+      const result = await captureClipboardImage(process.cwd());
+
+      if (!result.ok || !result.output) {
+        setError(result.error?.message ?? "Clipboard image capture failed.");
+        void writeDebugLog(process.cwd(), config.debug, "clipboard.capture_failed", { error: result.error });
+        return;
+      }
+
+      void writeDebugLog(process.cwd(), config.debug, "clipboard.capture_complete", result.output);
+      const nextPrompt = prompt.length > 0
+        ? `${prompt}\n\nUse image_understand on ${result.output.path}.`
+        : `Analyze the clipboard image saved at ${result.output.path}.`;
+
+      await submitChat(nextPrompt, { retry: false });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitChat(value: string, options: { retry: boolean }): Promise<void> {

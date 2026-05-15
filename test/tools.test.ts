@@ -26,6 +26,7 @@ test("default registry exposes Phase 2 tools with expected permissions", () => {
   assert.equal(registry.get("image_generate")?.permission, "active");
   assert.equal(registry.get("image_edit")?.permission, "active");
   assert.equal(registry.get("image_understand")?.permission, "passive");
+  assert.equal(registry.get("capture_clipboard_image")?.permission, "active");
 });
 
 test("registry rejects duplicate tool names", () => {

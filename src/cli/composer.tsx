@@ -30,7 +30,7 @@ export function composerState(disabled: boolean): ComposerState {
   return {
     prompt: disabled ? "..." : ">  ",
     cursor: disabled ? "" : "_",
-    hint: disabled ? "waiting for current action" : "/exit /retry /debug arrows edit history ctrl+a/e/u/k/w"
+    hint: disabled ? "waiting for current action" : "/exit /retry /debug /clip arrows edit history ctrl+a/e/u/k/w"
   };
 }
 

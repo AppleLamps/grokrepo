@@ -172,6 +172,15 @@ All tool results use the same structured envelope:
 - Output includes a concise model-generated visual analysis.
 - Typical use: screenshots, UI references, diagrams, OCR-style extraction, and visual debugging.
 
+### `capture_clipboard_image`
+
+- Permission: `active`
+- Purpose: captures the current native Windows clipboard bitmap image and saves it under `.workspace/images`.
+- Arguments: none.
+- Output includes the saved workspace path, file size, and platform.
+- Failure modes include `unsupported_platform`, `clipboard_empty`, and `clipboard_capture_failed`.
+- Typical use: import a screenshot copied to the Windows clipboard before using `image_understand` or `image_edit`.
+
 ### `image_generate`
 
 - Permission: `active`

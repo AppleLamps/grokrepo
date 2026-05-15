@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { getOptionalString, getString } from "./args.js";
+import { captureClipboardImage } from "./clipboard-image.js";
 import { normalizeImageSource } from "./image-source.js";
 import { toolFailure, type Tool } from "./types.js";
 
@@ -9,7 +10,7 @@ const ASPECT_RATIOS = new Set(["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"
 const RESOLUTIONS = new Set(["1k", "2k"]);
 
 export function createImageTools(): Tool[] {
-  return [imageGenerateTool, imageEditTool, imageUnderstandTool];
+  return [imageGenerateTool, imageEditTool, imageUnderstandTool, captureClipboardImageTool];
 }
 
 const imageGenerateTool: Tool = {
@@ -197,6 +198,20 @@ const imageUnderstandTool: Tool = {
       imageUrl: normalized.value.imageUrl,
       source: normalized.value.source
     });
+  }
+};
+
+const captureClipboardImageTool: Tool = {
+  name: "capture_clipboard_image",
+  description: "Capture a native Windows clipboard image and save it under .workspace/images after approval.",
+  permission: "active",
+  parameters: {
+    type: "object",
+    properties: {},
+    additionalProperties: false
+  },
+  async execute(_args, context) {
+    return captureClipboardImage(context.cwd);
   }
 };
 

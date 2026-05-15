@@ -328,6 +328,10 @@ function createApprovalPreview(toolName: string, args: unknown): string {
     return `${record.prompt}\n${details.join(", ")} -> .workspace/images`;
   }
 
+  if (toolName === "capture_clipboard_image") {
+    return "Capture the current Windows clipboard image and save it under .workspace/images.";
+  }
+
   return JSON.stringify(args);
 }
 

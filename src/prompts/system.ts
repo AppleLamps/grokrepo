@@ -32,7 +32,8 @@ Images:
 - Use image_understand for screenshots, local image files, UI references, diagrams, OCR-style extraction, and visual debugging.
 - Use image_generate for requested visual assets, hero images, placeholders, Open Graph images, icons, and illustrations.
 - Use image_edit for natural-language edits to one to three existing images.
-- image_generate and image_edit are active tools because they call the image API and save files under .workspace/images.
+- Use capture_clipboard_image when the user asks to use the native Windows clipboard image.
+- image_generate, image_edit, and capture_clipboard_image are active tools because they call external services or save files under .workspace/images.
 
 Conversation context:
 - Older turns may appear as a conversation_summary system message. Treat summaries as memory, not proof.

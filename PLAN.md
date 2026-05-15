@@ -17,7 +17,7 @@ Current status:
 
 Verification status:
 - Latest verified build: `npm run build` passed.
-- Latest verified tests: `npm test` passed with 115 tests.
+- Latest verified tests: `npm test` passed with 118 tests.
 - Latest local implementation includes Phase 1 through Phase 7, Phase 8 packaging work, system prompt polish, tool documentation, and test hardening.
 - Test hardening added focused coverage for filesystem tools, patch editing edge cases, session persistence, path safety, tool lifecycle events, debug logs, UI summaries, and git-aware context scanning.
 - Phase 8 packaging metadata, docs, demo guide, and dry-run packaging are present locally and pass. npm publishing is still pending.
@@ -317,7 +317,7 @@ Support:
 - [x] pasted screenshots as data URIs or file paths
 - [x] local image files
 - [x] drag-and-drop into terminal as inserted file paths
-- [ ] native OS clipboard image capture
+- [x] native Windows OS clipboard image capture
 
 ---
 
@@ -464,7 +464,7 @@ Deliver:
 
 1. Decide whether to publish `grokcode@1.0.0` to npm now or keep it as a local package candidate.
 2. Add screenshots or a short demo video if needed before publishing.
-3. Add native OS clipboard image capture only if the terminal UI needs it.
+3. Publish to npm when ready.
 
 ---
 
