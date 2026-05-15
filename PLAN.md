@@ -12,14 +12,14 @@ Current status:
 - [x] Phase 4 Search Tools
 - [x] Phase 5 Image System
 - [x] Phase 6 Context Engine
-- [ ] Phase 7 UX Polish
+- [x] Phase 7 UX Polish
 - [ ] Phase 8 Packaging
 
 Verification status:
 - Latest verified build: `npm run build` passed.
-- Latest verified tests: `npm test` passed with 76 tests.
-- Latest pushed implementation includes Phase 1 through Phase 6 after the current branch is pushed.
-- Phase 3-6 deferred work and expanded workflow tests are included in this branch.
+- Latest verified tests: `npm test` passed with 88 tests.
+- Latest pushed implementation includes Phase 1 through Phase 6.
+- Phase 7 UI polish is present locally and passes, but is not committed yet.
 
 ---
 
@@ -358,44 +358,44 @@ Requirements:
 
 ---
 
-# Phase 7 — UX Polish [ ]
+# Phase 7 — UX Polish [x]
 
 Goal:
 Make the CLI feel premium.
 
 Deliverables:
-- [ ] smooth streaming
-- [ ] clean layouts
-- [ ] responsive UI
-- [ ] better logging
+- [x] smooth streaming
+- [x] clean layouts
+- [x] responsive UI
+- [x] better logging
 
 Tasks:
 
 ## Improve Terminal Rendering
 
 Requirements:
-- clean spacing
-- stable cursor behavior
-- minimal flicker
-- progress indicators
+- [x] clean spacing
+- [x] stable cursor behavior
+- [x] minimal flicker
+- [x] progress indicators
 
 ---
 
 ## Add Themes
 
 Support:
-- dark mode
-- light mode
-- compact mode
+- [x] dark mode
+- [x] light mode
+- [x] compact mode
 
 ---
 
 ## Improve Error Handling
 
 Requirements:
-- actionable errors
-- retry support
-- debug logs
+- [x] actionable errors
+- [x] retry support
+- [x] debug logs
 
 ---
 
@@ -444,9 +444,9 @@ Deliver:
 
 # Recommended Next Steps
 
-1. Start Phase 7 UX polish: terminal rendering, compact/clean layouts, progress indicators, actionable errors, and debug logs.
+1. Start Phase 8 packaging after UX polish stabilizes.
 2. Add native OS clipboard image capture only if the terminal UI needs it.
-3. Start Phase 8 packaging after UX polish stabilizes.
+3. Continue optional UI refinements: richer debug-log viewing and full readline-style cursor movement.
 
 ---
 

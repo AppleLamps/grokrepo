@@ -1,4 +1,4 @@
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, useApp, useInput } from "ink";
 import { useMemo, useState } from "react";
 
 import type { ContextBuilder } from "../context/index.js";
@@ -11,8 +11,11 @@ import type { ContextRuntimeMetadata } from "../runtime/summarization.js";
 import type { ToolRegistry } from "../tools/index.js";
 import type { ToolApprovalDecision } from "../tools/types.js";
 import type { AppConfig } from "../utils/config.js";
+import { writeDebugLog } from "../utils/debug-log.js";
+import { Header } from "./header.js";
 import { ChatInput } from "./input.js";
 import { ChatOutput, isExpandableSearchEvent } from "./output.js";
+import { getTheme } from "./theme.js";
 
 interface AppProps {
   config: AppConfig;
@@ -40,6 +43,8 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
   const [error, setError] = useState<string>();
   const [usage, setUsage] = useState<GrokUsage>();
   const [contextMetadata, setContextMetadata] = useState<ContextRuntimeMetadata>();
+  const [lastSubmittedValue, setLastSubmittedValue] = useState<string>();
+  const theme = useMemo(() => getTheme(config.uiTheme ?? "dark"), [config.uiTheme]);
 
   const status = useMemo(() => {
     if (config.mock) {
@@ -132,15 +137,33 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
 
   async function handleSubmit(value: string): Promise<void> {
     if (value === "/exit" || value === "/quit") {
+      void writeDebugLog(process.cwd(), config.debug, "app.exit", { command: value });
       exit();
       return;
     }
 
+    if (value === "/retry") {
+      if (!lastSubmittedValue) {
+        setError("Nothing to retry yet.");
+        void writeDebugLog(process.cwd(), config.debug, "chat.retry_missing");
+        return;
+      }
+
+      await submitChat(lastSubmittedValue, { retry: true });
+      return;
+    }
+
+    await submitChat(value, { retry: false });
+  }
+
+  async function submitChat(value: string, options: { retry: boolean }): Promise<void> {
     setBusy(true);
     setError(undefined);
     setUsage(undefined);
     setContextMetadata(undefined);
     setExpandedToolEventIds([]);
+    setLastSubmittedValue(value);
+    void writeDebugLog(process.cwd(), config.debug, options.retry ? "chat.retry" : "chat.submit", { value });
 
     session.addUserMessage(value);
 
@@ -174,7 +197,14 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
           );
         },
         onToolEvent: (event) => {
-          setToolEvents((current) => [...current, event]);
+          setToolEvents((current) => mergeToolEvent(current, event));
+          void writeDebugLog(process.cwd(), config.debug, "tool.event", {
+            id: event.id,
+            tool: event.tool,
+            status: event.status,
+            ok: event.result?.ok,
+            error: event.result?.error?.code
+          });
         },
         requestApproval: (request) =>
           new Promise((resolve) => {
@@ -189,9 +219,15 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
       setMessages([...session.listMessages()]);
       setUsage(result.usage);
       setContextMetadata(result.context);
+      void writeDebugLog(process.cwd(), config.debug, "chat.complete", {
+        usage: result.usage,
+        context: result.context
+      });
     } catch (cause) {
       setMessages([...session.listMessages()]);
-      setError(cause instanceof Error ? cause.message : "Unknown chat error.");
+      const message = cause instanceof Error ? cause.message : "Unknown chat error.";
+      setError(message);
+      void writeDebugLog(process.cwd(), config.debug, "chat.error", { message });
     } finally {
       setBusy(false);
     }
@@ -199,8 +235,7 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text color="cyan">GrokCode</Text>
-      <Text color="gray">Phase 6 context runtime, {status}. Type /exit to quit.</Text>
+      <Header status={status} busy={busy} theme={theme} debug={Boolean(config.debug)} />
       <Box marginTop={1} flexDirection="column">
         <ChatOutput
           messages={messages}
@@ -211,11 +246,28 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
           error={error}
           usage={usage}
           contextMetadata={contextMetadata}
+          busy={busy}
+          debug={Boolean(config.debug)}
+          theme={theme}
         />
       </Box>
       <Box marginTop={1}>
-        <ChatInput disabled={busy || Boolean(pendingApproval)} onSubmit={(value) => void handleSubmit(value)} />
+        <ChatInput disabled={busy || Boolean(pendingApproval)} onSubmit={(value) => void handleSubmit(value)} theme={theme} />
       </Box>
     </Box>
   );
+}
+
+export function mergeToolEvent(events: readonly ToolRuntimeEvent[], next: ToolRuntimeEvent): ToolRuntimeEvent[] {
+  const index = events.findIndex((event) => event.id === next.id);
+
+  if (index < 0) {
+    return [...events, next];
+  }
+
+  return [
+    ...events.slice(0, index),
+    next,
+    ...events.slice(index + 1)
+  ];
 }
