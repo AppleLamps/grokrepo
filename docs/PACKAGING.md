@@ -14,7 +14,7 @@ This runs the test suite, builds `dist/`, and runs `npm pack --dry-run`.
 Current verified local result:
 
 - `npm run build` passed.
-- `npm test` passed with 118 tests.
+- `npm test` passed with 124 tests.
 - `npm run verify:package` passed during Phase 8 packaging.
 
 ## Publish
@@ -42,6 +42,7 @@ The npm package is intentionally small. It includes:
 - `dist/`
 - `README.md`
 - `.env.example`
+- `tools.md`
 - `package.json`
 
 It excludes source files, tests, local docs, `.workspace/`, and local API reference material.
@@ -50,7 +51,6 @@ The local docs that do not ship to npm are:
 
 - `PLAN.md`
 - `UIPLAN.md`
-- `tools.md`
 - `docs/`
 - `demo/`
 

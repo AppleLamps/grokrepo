@@ -3,6 +3,7 @@ export type PatchFileKind = "modify" | "create" | "delete";
 export interface PatchLine {
   type: "context" | "add" | "remove";
   content: string;
+  noNewline?: boolean;
 }
 
 export interface PatchHunk {
@@ -80,6 +81,10 @@ export function parseUnifiedDiff(patch: string): ParsedPatch {
         const hunkLine = lines[index] ?? "";
 
         if (hunkLine === "\\ No newline at end of file") {
+          const previousLine = hunkLines.at(-1);
+          if (previousLine) {
+            previousLine.noNewline = true;
+          }
           index += 1;
           continue;
         }
@@ -137,12 +142,25 @@ export function parseUnifiedDiff(patch: string): ParsedPatch {
 }
 
 export function generateUnifiedDiff(path: string, oldContent: string, newContent: string): string {
-  const oldLines = splitContentLines(oldContent);
-  const newLines = splitContentLines(newContent);
+  const oldFile = splitContentLines(oldContent);
+  const newFile = splitContentLines(newContent);
+  const oldLines = oldFile.lines;
+  const newLines = newFile.lines;
   const operations = diffLines(oldLines, newLines);
   const oldCount = oldLines.length;
   const newCount = newLines.length;
-  const hunkLines = operations.map((operation) => `${operation.prefix}${operation.line}`);
+  const hunkLines = operations.flatMap((operation) => {
+    const line = `${operation.prefix}${operation.line}`;
+    const hasNoNewlineMarker =
+      operation.prefix === "-" && operation.oldIndex === oldLines.length - 1 && !oldFile.hasFinalNewline ||
+      operation.prefix === "+" && operation.newIndex === newLines.length - 1 && !newFile.hasFinalNewline ||
+      operation.prefix === " " &&
+        operation.oldIndex === oldLines.length - 1 &&
+        operation.newIndex === newLines.length - 1 &&
+        (!oldFile.hasFinalNewline || !newFile.hasFinalNewline);
+
+    return hasNoNewlineMarker ? [line, "\\ No newline at end of file"] : [line];
+  });
 
   return [
     `--- a/${path}`,
@@ -153,8 +171,10 @@ export function generateUnifiedDiff(path: string, oldContent: string, newContent
 }
 
 export function applyPatchToContent(file: PatchFile, content: string): string {
-  const sourceLines = splitContentLines(content);
+  const source = splitContentLines(content);
+  const sourceLines = source.lines;
   const outputLines: string[] = [];
+  let outputHasFinalNewline = source.hasFinalNewline;
   let sourceIndex = 0;
 
   for (const hunk of file.hunks) {
@@ -168,12 +188,14 @@ export function applyPatchToContent(file: PatchFile, content: string): string {
       }
 
       outputLines.push(sourceLine);
+      outputHasFinalNewline = true;
       sourceIndex += 1;
     }
 
     for (const line of hunk.lines) {
       if (line.type === "add") {
         outputLines.push(line.content);
+        outputHasFinalNewline = !line.noNewline;
         continue;
       }
 
@@ -185,11 +207,14 @@ export function applyPatchToContent(file: PatchFile, content: string): string {
 
       if (line.type === "context") {
         outputLines.push(sourceLine);
+        outputHasFinalNewline = !line.noNewline;
       }
 
       sourceIndex += 1;
     }
   }
+
+  const copiedTrailingSource = sourceIndex < sourceLines.length;
 
   while (sourceIndex < sourceLines.length) {
     const sourceLine = sourceLines[sourceIndex];
@@ -201,7 +226,11 @@ export function applyPatchToContent(file: PatchFile, content: string): string {
     sourceIndex += 1;
   }
 
-  return `${outputLines.join("\n")}${outputLines.length > 0 ? "\n" : ""}`;
+  if (copiedTrailingSource) {
+    outputHasFinalNewline = source.hasFinalNewline;
+  }
+
+  return `${outputLines.join("\n")}${outputLines.length > 0 && outputHasFinalNewline ? "\n" : ""}`;
 }
 
 function parseDiffPath(line: string): string | null {
@@ -229,23 +258,33 @@ function parseHunkHeader(line: string): Omit<PatchHunk, "header" | "lines"> {
   };
 }
 
-function splitContentLines(content: string): string[] {
+function splitContentLines(content: string): { lines: string[]; hasFinalNewline: boolean } {
   const normalized = content.replace(/\r\n/g, "\n");
 
   if (normalized.length === 0) {
-    return [];
+    return {
+      lines: [],
+      hasFinalNewline: false
+    };
   }
 
   const lines = normalized.split("\n");
+  const hasFinalNewline = normalized.endsWith("\n");
 
-  if (normalized.endsWith("\n")) {
+  if (hasFinalNewline) {
     lines.pop();
   }
 
-  return lines;
+  return {
+    lines,
+    hasFinalNewline
+  };
 }
 
-function diffLines(oldLines: string[], newLines: string[]): Array<{ prefix: " " | "+" | "-"; line: string }> {
+function diffLines(
+  oldLines: string[],
+  newLines: string[]
+): Array<{ prefix: " " | "+" | "-"; line: string; oldIndex?: number; newIndex?: number }> {
   const matrix = Array.from({ length: oldLines.length + 1 }, () => Array<number>(newLines.length + 1).fill(0));
 
   for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
@@ -257,20 +296,20 @@ function diffLines(oldLines: string[], newLines: string[]): Array<{ prefix: " " 
     }
   }
 
-  const operations: Array<{ prefix: " " | "+" | "-"; line: string }> = [];
+  const operations: Array<{ prefix: " " | "+" | "-"; line: string; oldIndex?: number; newIndex?: number }> = [];
   let oldIndex = 0;
   let newIndex = 0;
 
   while (oldIndex < oldLines.length || newIndex < newLines.length) {
     if (oldIndex < oldLines.length && newIndex < newLines.length && oldLines[oldIndex] === newLines[newIndex]) {
-      operations.push({ prefix: " ", line: oldLines[oldIndex] ?? "" });
+      operations.push({ prefix: " ", line: oldLines[oldIndex] ?? "", oldIndex, newIndex });
       oldIndex += 1;
       newIndex += 1;
     } else if (newIndex < newLines.length && (oldIndex === oldLines.length || matrix[oldIndex]![newIndex + 1]! >= matrix[oldIndex + 1]![newIndex]!)) {
-      operations.push({ prefix: "+", line: newLines[newIndex] ?? "" });
+      operations.push({ prefix: "+", line: newLines[newIndex] ?? "", newIndex });
       newIndex += 1;
     } else {
-      operations.push({ prefix: "-", line: oldLines[oldIndex] ?? "" });
+      operations.push({ prefix: "-", line: oldLines[oldIndex] ?? "", oldIndex });
       oldIndex += 1;
     }
   }

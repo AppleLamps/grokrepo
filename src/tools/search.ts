@@ -41,14 +41,18 @@ const webSearchTool: Tool = {
       return toolFailure("web_search", "invalid_arguments", "web_search requires a string query.");
     }
 
-    const allowedDomains = getStringArray(args, "allowedDomains");
-    const excludedDomains = getStringArray(args, "excludedDomains");
+    const allowedDomains = getOptionalStringArray(args, "allowedDomains");
+    const excludedDomains = getOptionalStringArray(args, "excludedDomains");
 
-    if (allowedDomains && excludedDomains) {
+    if (!allowedDomains.ok || !excludedDomains.ok) {
+      return toolFailure("web_search", "invalid_arguments", "web_search domain filters must be arrays of strings.");
+    }
+
+    if (allowedDomains.value && excludedDomains.value) {
       return toolFailure("web_search", "invalid_arguments", "allowedDomains and excludedDomains cannot both be set.");
     }
 
-    if ((allowedDomains?.length ?? 0) > 5 || (excludedDomains?.length ?? 0) > 5) {
+    if ((allowedDomains.value?.length ?? 0) > 5 || (excludedDomains.value?.length ?? 0) > 5) {
       return toolFailure("web_search", "invalid_arguments", "web_search domain filters accept at most 5 domains.");
     }
 
@@ -58,8 +62,8 @@ const webSearchTool: Tool = {
 
     return context.searchProvider.runWebSearch({
       query,
-      ...(allowedDomains ? { allowedDomains } : {}),
-      ...(excludedDomains ? { excludedDomains } : {}),
+      ...(allowedDomains.value ? { allowedDomains: allowedDomains.value } : {}),
+      ...(excludedDomains.value ? { excludedDomains: excludedDomains.value } : {}),
       ...(getBoolean(args, "enableImageUnderstanding") !== undefined
         ? { enableImageUnderstanding: getBoolean(args, "enableImageUnderstanding") }
         : {})
@@ -115,16 +119,20 @@ const xSearchTool: Tool = {
       return toolFailure("x_search", "invalid_arguments", "x_search requires a string query.");
     }
 
-    const allowedXHandles = getStringArray(args, "allowedXHandles");
-    const excludedXHandles = getStringArray(args, "excludedXHandles");
+    const allowedXHandles = getOptionalStringArray(args, "allowedXHandles");
+    const excludedXHandles = getOptionalStringArray(args, "excludedXHandles");
     const fromDate = getOptionalString(args, "fromDate");
     const toDate = getOptionalString(args, "toDate");
 
-    if (allowedXHandles && excludedXHandles) {
+    if (!allowedXHandles.ok || !excludedXHandles.ok) {
+      return toolFailure("x_search", "invalid_arguments", "x_search handle filters must be arrays of strings.");
+    }
+
+    if (allowedXHandles.value && excludedXHandles.value) {
       return toolFailure("x_search", "invalid_arguments", "allowedXHandles and excludedXHandles cannot both be set.");
     }
 
-    if ((allowedXHandles?.length ?? 0) > 10 || (excludedXHandles?.length ?? 0) > 10) {
+    if ((allowedXHandles.value?.length ?? 0) > 10 || (excludedXHandles.value?.length ?? 0) > 10) {
       return toolFailure("x_search", "invalid_arguments", "x_search handle filters accept at most 10 handles.");
     }
 
@@ -138,8 +146,8 @@ const xSearchTool: Tool = {
 
     return context.searchProvider.runXSearch({
       query,
-      ...(allowedXHandles ? { allowedXHandles } : {}),
-      ...(excludedXHandles ? { excludedXHandles } : {}),
+      ...(allowedXHandles.value ? { allowedXHandles: allowedXHandles.value } : {}),
+      ...(excludedXHandles.value ? { excludedXHandles: excludedXHandles.value } : {}),
       ...(fromDate ? { fromDate } : {}),
       ...(toDate ? { toDate } : {}),
       ...(getBoolean(args, "enableImageUnderstanding") !== undefined
@@ -152,18 +160,20 @@ const xSearchTool: Tool = {
   }
 };
 
-function getStringArray(args: unknown, key: string): string[] | undefined {
+function getOptionalStringArray(args: unknown, key: string): { ok: true; value?: string[] } | { ok: false } {
   if (!isRecord(args)) {
-    return undefined;
+    return { ok: true };
   }
 
   const value = args[key];
 
   if (value === undefined) {
-    return undefined;
+    return { ok: true };
   }
 
-  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+    ? { ok: true, value }
+    : { ok: false };
 }
 
 function getBoolean(args: unknown, key: string): boolean | undefined {

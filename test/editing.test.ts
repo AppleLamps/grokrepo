@@ -29,6 +29,19 @@ test("applyPatch applies a single-file patch", async () => {
   assert.equal(await readFile(path.join(cwd, "a.txt"), "utf8"), "two\n");
 });
 
+test("applyPatch preserves files without a final newline", async () => {
+  const cwd = await createTempWorkspace();
+  await writeFile(path.join(cwd, "a.txt"), "one", "utf8");
+
+  const result = await applyPatch(
+    { patch: generateUnifiedDiff("a.txt", "one", "two") },
+    { cwd, approval: { approved: true, approvedFiles: ["a.txt"] } }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(await readFile(path.join(cwd, "a.txt"), "utf8"), "two");
+});
+
 test("applyPatch applies a multi-file patch", async () => {
   const cwd = await createTempWorkspace();
   await writeFile(path.join(cwd, "a.txt"), "one\n", "utf8");
@@ -287,6 +300,15 @@ test("applyPatchToContent normalizes CRLF input", () => {
   assert.ok(file);
 
   assert.equal(applyPatchToContent(file, "one\r\n"), "two\n");
+});
+
+test("applyPatchToContent preserves no-final-newline markers", () => {
+  const patch = generateUnifiedDiff("a.txt", "one", "two");
+  const file = parseUnifiedDiff(patch).files[0];
+  assert.ok(file);
+  assert.match(patch, /\\ No newline at end of file/);
+
+  assert.equal(applyPatchToContent(file, "one"), "two");
 });
 
 async function createTempWorkspace(): Promise<string> {

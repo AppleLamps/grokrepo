@@ -24,6 +24,7 @@ import { groupToolEvents } from "../src/cli/tool-timeline.js";
 import { isExpandableSearchEvent, searchResultDetails } from "../src/cli/output.js";
 import { compactToolSummary, statusColor, statusLabel } from "../src/cli/ui-format.js";
 import type { ToolRuntimeEvent } from "../src/runtime/chat.js";
+import { loadConfig } from "../src/utils/config.js";
 import { debugLogLine, debugLogPath, readDebugLogTail } from "../src/utils/debug-log.js";
 
 test("diff renderer colors added, removed, hunk, and file header lines", () => {
@@ -412,6 +413,37 @@ test("debug panel model formats recent log entries", () => {
   assert.equal(model.controls, "/debug toggles this view");
   assert.match(model.lines[0] ?? "", /12:34:56 chat\.complete/);
   assert.match(model.lines[0] ?? "", /totalTokens/);
+});
+
+test("loadConfig keeps shell environment values ahead of .env", async () => {
+  const cwd = await mkdirTempWorkspace();
+  const originalCwd = process.cwd();
+  const keys = ["XAI_API_KEY", "GROK_API_KEY", "GROK_MODEL"] as const;
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+
+  try {
+    await writeFile(path.join(cwd, ".env"), "XAI_API_KEY=from-dotenv\nGROK_MODEL=from-dotenv\n", "utf8");
+    process.chdir(cwd);
+    process.env.XAI_API_KEY = "from-shell";
+    delete process.env.GROK_API_KEY;
+    delete process.env.GROK_MODEL;
+
+    const config = loadConfig();
+
+    assert.equal(config.apiKey, "from-shell");
+    assert.equal(config.apiKeySource, "XAI_API_KEY");
+    assert.equal(config.model, "from-dotenv");
+  } finally {
+    process.chdir(originalCwd);
+    for (const key of keys) {
+      const value = previous.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
 });
 
 async function mkdirTempWorkspace(): Promise<string> {

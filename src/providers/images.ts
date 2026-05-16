@@ -242,10 +242,6 @@ function buildUrl(baseUrl: string, endpoint: string): string {
   return new URL(endpoint, `${baseUrl.replace(/\/$/, "")}/`).toString();
 }
 
-async function saveBase64Images(response: ImagesResponse, outputDirectory: string, prompt: string): Promise<GeneratedImage[]> {
-  return saveImageResponse(response, outputDirectory, prompt, { allowUrlDownload: false });
-}
-
 async function saveImageResponse(
   response: ImagesResponse,
   outputDirectory: string,

@@ -10,7 +10,7 @@ Current local build:
 
 - Phases 1 through 7 are complete.
 - Phase 8 packaging is implemented locally and still needs npm publish plus optional demo media.
-- Latest verified suite: `npm run build` passed and `npm test` passed with 118 tests.
+- Latest verified suite: `npm run build` passed and `npm test` passed with 124 tests.
 
 ## Install
 
@@ -93,7 +93,7 @@ Full package verification:
 npm run verify:package
 ```
 
-The npm package is intentionally small. It ships `dist/`, `README.md`, `.env.example`, and package metadata.
+The npm package is intentionally small. It ships `dist/`, `README.md`, `.env.example`, `tools.md`, and package metadata.
 
 ## Features
 

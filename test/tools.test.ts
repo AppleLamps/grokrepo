@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { createDefaultToolRegistry } from "../src/tools/index.js";
 import { resolveWorkspacePath } from "../src/tools/path.js";
+import { runFileCommand } from "../src/tools/process.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 
 test("default registry exposes Phase 2 tools with expected permissions", () => {
@@ -191,4 +192,33 @@ test("resolveWorkspacePath handles root and rejects absolute paths outside the w
   assert.deepEqual(resolveWorkspacePath(cwd, "."), { ok: true, path: path.resolve(cwd) });
   assert.equal(resolveWorkspacePath(cwd, "../outside").ok, false);
   assert.equal(resolveWorkspacePath(cwd, path.join(os.tmpdir(), "outside.txt")).ok, false);
+});
+
+test("git_diff includes staged and unstaged diffs", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-git-"));
+  assert.equal((await runFileCommand("git", ["init"], { cwd })).exitCode, 0);
+  assert.equal((await runFileCommand("git", ["config", "user.email", "test@example.com"], { cwd })).exitCode, 0);
+  assert.equal((await runFileCommand("git", ["config", "user.name", "Test User"], { cwd })).exitCode, 0);
+  await writeFile(path.join(cwd, "staged.txt"), "base staged\n", "utf8");
+  await writeFile(path.join(cwd, "unstaged.txt"), "base unstaged\n", "utf8");
+  assert.equal((await runFileCommand("git", ["add", "."], { cwd })).exitCode, 0);
+  assert.equal((await runFileCommand("git", ["commit", "-m", "initial"], { cwd })).exitCode, 0);
+  await writeFile(path.join(cwd, "staged.txt"), "updated staged\n", "utf8");
+  assert.equal((await runFileCommand("git", ["add", "staged.txt"], { cwd })).exitCode, 0);
+  await writeFile(path.join(cwd, "unstaged.txt"), "updated unstaged\n", "utf8");
+
+  const tool = createDefaultToolRegistry().get("git_diff");
+  assert.ok(tool);
+  const result = await tool.execute({}, { cwd });
+
+  assert.equal(result.ok, true);
+  const output = result.output as {
+    stdout: string;
+    unstaged: { stdout: string };
+    staged: { stdout: string };
+  };
+  assert.match(output.stdout, /## unstaged/);
+  assert.match(output.stdout, /## staged/);
+  assert.match(output.unstaged.stdout, /updated unstaged/);
+  assert.match(output.staged.stdout, /updated staged/);
 });

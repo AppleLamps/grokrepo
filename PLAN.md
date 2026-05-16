@@ -17,7 +17,7 @@ Current status:
 
 Verification status:
 - Latest verified build: `npm run build` passed.
-- Latest verified tests: `npm test` passed with 118 tests.
+- Latest verified tests: `npm test` passed with 124 tests.
 - Latest local implementation includes Phase 1 through Phase 7, Phase 8 packaging work, system prompt polish, tool documentation, and test hardening.
 - Test hardening added focused coverage for filesystem tools, patch editing edge cases, session persistence, path safety, tool lifecycle events, debug logs, UI summaries, and git-aware context scanning.
 - Phase 8 packaging metadata, docs, demo guide, and dry-run packaging are present locally and pass. npm publishing is still pending.
@@ -49,7 +49,7 @@ npm init -y
 Install:
 
 ```bash
-npm install openai ink react chalk ora dotenv
+npm install openai ink react dotenv
 ```
 
 Dev dependencies:

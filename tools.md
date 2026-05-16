@@ -79,9 +79,9 @@ All tool results use the same structured envelope:
 ### `git_diff`
 
 - Permission: `passive`
-- Purpose: shows the current workspace diff.
+- Purpose: shows the current workspace diff, split into unstaged and staged sections.
 - Arguments: none.
-- Output includes stdout, stderr, and exit code.
+- Output includes combined stdout, stderr, exit code, and separate unstaged and staged command results.
 - Typical use: review local changes before summarizing, testing, or committing.
 
 ### `git_commit`

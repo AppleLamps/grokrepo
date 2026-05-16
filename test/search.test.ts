@@ -39,6 +39,31 @@ test("web_search validates max domain filters", async () => {
   assert.equal(result.error?.code, "invalid_arguments");
 });
 
+test("web_search rejects malformed domain filters", async () => {
+  const tool = createDefaultToolRegistry().get("web_search");
+  assert.ok(tool);
+
+  const allowed = await tool.execute(
+    {
+      query: "xAI",
+      allowedDomains: "x.ai"
+    },
+    { cwd: process.cwd(), searchProvider: createSearchProvider() }
+  );
+  const excluded = await tool.execute(
+    {
+      query: "xAI",
+      excludedDomains: ["example.com", 1]
+    },
+    { cwd: process.cwd(), searchProvider: createSearchProvider() }
+  );
+
+  assert.equal(allowed.ok, false);
+  assert.equal(allowed.error?.code, "invalid_arguments");
+  assert.equal(excluded.ok, false);
+  assert.equal(excluded.error?.code, "invalid_arguments");
+});
+
 test("x_search validates mutually exclusive handle filters", async () => {
   const tool = createDefaultToolRegistry().get("x_search");
   assert.ok(tool);
@@ -70,6 +95,31 @@ test("x_search validates max handle filters", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.error?.code, "invalid_arguments");
+});
+
+test("x_search rejects malformed handle filters", async () => {
+  const tool = createDefaultToolRegistry().get("x_search");
+  assert.ok(tool);
+
+  const allowed = await tool.execute(
+    {
+      query: "xAI",
+      allowedXHandles: "xai"
+    },
+    { cwd: process.cwd(), searchProvider: createSearchProvider() }
+  );
+  const excluded = await tool.execute(
+    {
+      query: "xAI",
+      excludedXHandles: ["xai", 1]
+    },
+    { cwd: process.cwd(), searchProvider: createSearchProvider() }
+  );
+
+  assert.equal(allowed.ok, false);
+  assert.equal(allowed.error?.code, "invalid_arguments");
+  assert.equal(excluded.ok, false);
+  assert.equal(excluded.error?.code, "invalid_arguments");
 });
 
 test("x_search validates ISO date format", async () => {

@@ -31,8 +31,21 @@ const gitDiffTool: Tool = {
     additionalProperties: false
   },
   async execute(_args, context) {
-    const result = await runFileCommand("git", ["diff"], { cwd: context.cwd });
-    return commandEnvelope("git_diff", result);
+    const unstaged = await runFileCommand("git", ["diff"], { cwd: context.cwd });
+    const staged = await runFileCommand("git", ["diff", "--staged"], { cwd: context.cwd });
+    const output = {
+      stdout: renderCombinedDiff(unstaged.stdout, staged.stdout),
+      stderr: [unstaged.stderr, staged.stderr].filter(Boolean).join("\n"),
+      exitCode: unstaged.exitCode === 0 && staged.exitCode === 0 ? 0 : unstaged.exitCode || staged.exitCode,
+      unstaged,
+      staged
+    };
+
+    if (output.exitCode === 0) {
+      return toolSuccess("git_diff", output);
+    }
+
+    return toolFailure("git_diff", "command_failed", output.stderr || `git_diff exited with code ${output.exitCode}.`, output);
   }
 };
 
@@ -79,4 +92,14 @@ function commandEnvelope(tool: string, result: { stdout: string; stderr: string;
     stderr: result.stderr,
     exitCode: result.exitCode
   });
+}
+
+function renderCombinedDiff(unstaged: string, staged: string): string {
+  return [
+    "## unstaged",
+    unstaged.trimEnd() || "(no unstaged changes)",
+    "",
+    "## staged",
+    staged.trimEnd() || "(no staged changes)"
+  ].join("\n");
 }

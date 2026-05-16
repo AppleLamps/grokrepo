@@ -16,7 +16,7 @@ export interface AppConfig {
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
 export function loadConfig(): AppConfig {
-  loadDotenv({ quiet: true, override: true });
+  loadDotenv({ quiet: true });
 
   const xaiApiKey = process.env.XAI_API_KEY;
   const grokApiKey = process.env.GROK_API_KEY;

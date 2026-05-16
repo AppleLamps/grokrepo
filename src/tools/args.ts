@@ -1,15 +1,5 @@
-import type { JsonObject } from "./types.js";
-
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function asObject(value: unknown): JsonObject | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  return value as JsonObject;
 }
 
 export function getString(args: unknown, key: string): string | undefined {

@@ -11,6 +11,5 @@ docs/
 tsconfig.json
 PLAN.md
 UIPLAN.md
-tools.md
 npm-debug.log*
 *.tgz
