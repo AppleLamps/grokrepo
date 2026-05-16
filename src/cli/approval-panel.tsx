@@ -49,11 +49,11 @@ export function ApprovalPanel({ pendingApproval, selectedFiles = [], theme = get
       {pendingApproval.kind === "patch" && pendingApproval.files && pendingApproval.files.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           {pendingApproval.files.map((file, index) => (
-            <Text key={file} color={selectedFiles.includes(file) ? "green" : theme.muted}>
+            <Text key={`${index}_${file}`} color={selectedFiles.includes(file) ? theme.user : theme.muted}>
               {index + 1}. {selectedFiles.includes(file) ? "[x]" : "[ ]"} {file}
             </Text>
           ))}
-          {pendingApproval.diff && <RenderedDiff diff={pendingApproval.diff} />}
+          {pendingApproval.diff && <RenderedDiff diff={pendingApproval.diff} theme={theme} />}
         </Box>
       )}
       <Text color={theme.muted}>{model.controls}</Text>
@@ -61,17 +61,17 @@ export function ApprovalPanel({ pendingApproval, selectedFiles = [], theme = get
   );
 }
 
-function RenderedDiff({ diff }: { diff: string }) {
+function RenderedDiff({ diff, theme }: { diff: string; theme: UiTheme }) {
   const rendered = renderDiffLines(diff);
 
   return (
     <Box flexDirection="column" marginTop={1}>
       {rendered.lines.map((line, index) => (
-        <Text key={`${index}_${line.text}`} color={line.color}>
+        <Text key={`diff_line_${index}`} color={line.color}>
           {line.text}
         </Text>
       ))}
-      {rendered.remaining > 0 && <Text color="gray">... {rendered.remaining} more diff line(s)</Text>}
+      {rendered.remaining > 0 && <Text color={theme.muted}>... {rendered.remaining} more diff line(s)</Text>}
     </Box>
   );
 }

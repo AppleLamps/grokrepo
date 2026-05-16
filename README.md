@@ -10,7 +10,7 @@ Current local build:
 
 - Phases 1 through 7 are complete.
 - Phase 8 packaging is implemented locally and still needs npm publish plus optional demo media.
-- Latest verified suite: `npm run build` passed and `npm test` passed with 124 tests.
+- Latest verified suite: `npm run build` passed and `npm test` passed with 134 tests.
 
 ## Install
 
@@ -66,10 +66,11 @@ Options:
 Inside the terminal UI:
 
 - `/exit` or `/quit`: close the app.
+- `/help`: show or hide command help.
 - `/retry`: retry the last submitted prompt.
 - `/debug`: show or hide recent debug log entries.
 - `/clip [prompt]`: capture the current Windows clipboard image, save it, and ask GrokCode to analyze it.
-- `Tab`: expand or collapse the latest search result details.
+- `Tab`: expand or collapse the latest search result details. This global shortcut is reserved for search detail toggling.
 - `Up` and `Down`: navigate command history.
 - `Left` and `Right`: move within the current input.
 - `Ctrl+A` and `Ctrl+E`: jump to start or end of input.
@@ -102,6 +103,7 @@ GrokCode currently includes:
 - streaming multi-turn chat
 - repository context scanning
 - conversation summarization
+- workspace session persistence
 - filesystem inspection
 - Git inspection and approved commits
 - approved shell execution
@@ -193,6 +195,19 @@ The context engine detects:
 Repo context is temporary guidance. The model is instructed to use `read_file` before making exact code claims or edits.
 
 Long conversations can be summarized when the active history passes the configured threshold. Raw messages remain in session state for auditability.
+
+## Session Persistence
+
+GrokCode restores the latest workspace session on launch.
+
+Policy:
+
+- Session file: `.workspace/sessions/current.json`.
+- Autosave cadence: after each user prompt, conversation summary update, assistant reply, and tool result.
+- Exit handling: `/exit`, `SIGINT`, and `SIGTERM` save the current session before shutdown.
+- Corrupt session handling: startup falls back to a fresh session and records the restore failure in the debug log when `GROKCODE_DEBUG=true`.
+
+The `.workspace/` directory is ignored by git, so transcripts, tool results, summaries, images, patch backups, and debug logs stay local by default.
 
 ## Project Structure
 

@@ -7,8 +7,8 @@ import type { ContextRuntimeMetadata } from "../runtime/summarization.js";
 import type { DebugLogViewEntry } from "../utils/debug-log.js";
 import { ApprovalPanel } from "./approval-panel.js";
 import { DebugPanel } from "./debug-panel.js";
+import { HelpPanel } from "./help-panel.js";
 import { MessageList } from "./message-list.js";
-import { StatusBar } from "./status-bar.js";
 import { getTheme, type UiTheme } from "./theme.js";
 import { isExpandableSearchEvent, searchResultDetails, ToolTimeline } from "./tool-timeline.js";
 
@@ -23,6 +23,7 @@ interface ChatOutputProps {
   contextMetadata?: ContextRuntimeMetadata;
   debugEntries?: readonly DebugLogViewEntry[];
   debugVisible?: boolean;
+  helpVisible?: boolean;
   busy?: boolean;
   debug?: boolean;
   theme?: UiTheme;
@@ -39,17 +40,18 @@ export function ChatOutput({
   contextMetadata,
   debugEntries = [],
   debugVisible = false,
+  helpVisible = false,
   busy = false,
   debug = false,
   theme = getTheme("dark")
 }: ChatOutputProps) {
   return (
     <Box flexDirection="column" gap={theme.dense ? 0 : 1}>
-      <MessageList messages={messages} theme={theme} />
+      <MessageList messages={messages} busy={busy} theme={theme} />
       <ToolTimeline events={toolEvents} expandedToolEventIds={expandedToolEventIds} theme={theme} />
       <ApprovalPanel pendingApproval={pendingApproval} selectedFiles={selectedApprovalFiles} theme={theme} />
       <DebugPanel entries={debugEntries} visible={debugVisible} theme={theme} />
-      <StatusBar busy={busy} error={error} usage={usage} contextMetadata={contextMetadata} debug={debug} theme={theme} />
+      <HelpPanel visible={helpVisible} theme={theme} />
     </Box>
   );
 }

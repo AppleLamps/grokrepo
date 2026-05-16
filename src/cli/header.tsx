@@ -1,46 +1,59 @@
 import { Box, Text } from "ink";
 
 import { getTheme, type UiTheme } from "./theme.js";
-import { sectionLabel, separator, truncateEnd } from "./ui-format.js";
+import { separator, truncateEnd } from "./ui-format.js";
 
 interface HeaderProps {
   status: string;
   busy: boolean;
+  cwd?: string;
   theme?: UiTheme;
   debug?: boolean;
 }
 
 export interface HeaderModel {
+  mark: string;
   title: string;
-  statusLine: string;
+  providerLine: string;
+  cwdLine: string;
   separator: string;
 }
 
-export function headerModel(status: string, busy: boolean, width = process.stdout.columns ?? 80, mode = "dark", debug = false): HeaderModel {
+export function headerModel(
+  status: string,
+  busy: boolean,
+  width = process.stdout.columns ?? 80,
+  mode = "dark",
+  debug = false,
+  cwd = process.cwd()
+): HeaderModel {
   const lineWidth = Math.max(24, width - 2);
   const compactStatus = compactProviderStatus(status);
   const state = busy ? "working" : "ready";
-  const debugText = debug ? " | debug" : "";
-  const prefix = `${sectionLabel("status")} Phase 7 UI polish | ${mode} | ${state}${debugText} | `;
-  const availableStatusWidth = Math.max(8, lineWidth - prefix.length);
-  const statusLine = `${prefix}${truncateEnd(compactStatus, availableStatusWidth)}`;
+  const suffix = [mode, state, debug ? "debug" : undefined].filter(Boolean).join(" | ");
+  const providerLine = truncateEnd(`${compactStatus} | ${suffix}`, lineWidth);
 
   return {
+    mark: "GC>",
     title: "GrokCode",
-    statusLine: truncateEnd(statusLine, lineWidth),
-    separator: separator(Math.max(24, Math.min(72, lineWidth)))
+    providerLine,
+    cwdLine: truncateEnd(cwd, lineWidth),
+    separator: separator(lineWidth)
   };
 }
 
-export function Header({ status, busy, theme = getTheme("dark"), debug = false }: HeaderProps) {
-  const model = headerModel(status, busy, process.stdout.columns ?? 80, theme.mode, debug);
+export function Header({ status, busy, cwd = process.cwd(), theme = getTheme("dark"), debug = false }: HeaderProps) {
+  const model = headerModel(status, busy, process.stdout.columns ?? 80, theme.mode, debug, cwd);
 
   return (
     <Box flexDirection="column">
-      <Text color={theme.accent} bold>
-        {model.title}
-      </Text>
-      <Text color={theme.muted}>{model.statusLine}</Text>
+      <Box>
+        <Text color={theme.accent} bold>{model.mark}</Text>
+        <Text> </Text>
+        <Text bold>{model.title}</Text>
+      </Box>
+      <Text color={theme.muted}>{model.providerLine}</Text>
+      <Text color={theme.muted}>{model.cwdLine}</Text>
       <Text color={theme.border}>{model.separator}</Text>
     </Box>
   );

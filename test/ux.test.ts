@@ -18,9 +18,11 @@ import {
 import { debugPanelModel } from "../src/cli/debug-panel.js";
 import { diffLineColor, renderDiffLines } from "../src/cli/diff-renderer.js";
 import { headerModel } from "../src/cli/header.js";
-import { statusBarParts } from "../src/cli/status-bar.js";
+import { helpPanelModel } from "../src/cli/help-panel.js";
+import { messageListItems } from "../src/cli/message-list.js";
+import { statusBarModel, statusBarParts } from "../src/cli/status-bar.js";
 import { getTheme, parseThemeMode } from "../src/cli/theme.js";
-import { groupToolEvents } from "../src/cli/tool-timeline.js";
+import { groupToolEvents, toolTimelineHint } from "../src/cli/tool-timeline.js";
 import { isExpandableSearchEvent, searchResultDetails } from "../src/cli/output.js";
 import { compactToolSummary, statusColor, statusLabel } from "../src/cli/ui-format.js";
 import type { ToolRuntimeEvent } from "../src/runtime/chat.js";
@@ -69,6 +71,30 @@ test("search result expansion extracts summary, citations, usage, and raw tool u
     usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
     rawToolUsage: { web_search: 1 }
   });
+});
+
+test("tool timeline shows latest search detail toggle hint", () => {
+  const events: ToolRuntimeEvent[] = [
+    {
+      id: "search_1",
+      tool: "web_search",
+      permission: "passive",
+      status: "completed",
+      result: {
+        ok: true,
+        tool: "web_search",
+        output: {
+          query: "docs",
+          summary: "summary",
+          citations: []
+        }
+      }
+    }
+  ];
+  const items = groupToolEvents(events);
+
+  assert.equal(toolTimelineHint(items), "Tab expands latest search details");
+  assert.equal(toolTimelineHint(items, ["search_1"]), "Tab collapses latest search details");
 });
 
 test("search result expansion ignores non-search events", () => {
@@ -266,42 +292,55 @@ test("status bar displays busy, usage, context, and error states", () => {
   });
 
   assert.deepEqual(parts, [
-    "working",
     "tokens p:1 c:2 t:3",
     "repo 10t truncated",
     "summary 8 msgs -> 20t",
+    "working",
     "error boom",
     "retry /retry"
   ]);
 });
 
 test("composer disabled state renders as waiting", () => {
-  assert.deepEqual(composerState(true), {
+  assert.deepEqual(composerState(true, 80), {
     prompt: "...",
     cursor: "",
-    hint: "waiting for current action"
+    hint: "waiting for current action",
+    separator: "-".repeat(78)
   });
-  assert.deepEqual(composerState(false), {
+  assert.deepEqual(composerState(false, 96), {
     prompt: ">  ",
     cursor: "_",
-    hint: "/exit /retry /debug /clip arrows edit history ctrl+a/e/u/k/w"
+    hint: "/help /exit /retry /debug /clip | arrows/history | ctrl+a/e/u/k/w",
+    separator: "-".repeat(94)
+  });
+  assert.deepEqual(composerState(false, 50), {
+    prompt: ">  ",
+    cursor: "_",
+    hint: "/help /exit /clip | arrows edit",
+    separator: "-".repeat(48)
   });
 });
 
 test("header model compacts long provider status", () => {
-  const model = headerModel("grok-4.3 via https://api.x.ai/v1 using XAI_API_KEY", false, 78);
+  const model = headerModel("grok-4.3 via https://api.x.ai/v1 using XAI_API_KEY", false, 78, "dark", false, "C:\\Users\\lucas\\Desktop\\grokcode");
 
+  assert.equal(model.mark, "GC>");
   assert.equal(model.title, "GrokCode");
-  assert.equal(model.statusLine.includes("https://api.x.ai/v1"), false);
-  assert.equal(model.statusLine.includes("x.ai"), true);
-  assert.equal(model.statusLine.length <= 78, true);
+  assert.equal(model.providerLine.includes("https://api.x.ai/v1"), false);
+  assert.equal(model.providerLine.includes("Phase 7"), false);
+  assert.equal(model.providerLine.includes("CONN"), false);
+  assert.equal(model.providerLine.includes("x.ai"), true);
+  assert.equal(model.cwdLine.includes("grokcode"), true);
+  assert.equal(model.providerLine.length <= 76, true);
+  assert.equal(model.separator.length, 76);
 });
 
 test("header model caps debug line to terminal width", () => {
   const model = headerModel("grok-4.3 via https://api.x.ai/v1 using XAI_API_KEY", false, 72, "dark", true);
 
-  assert.equal(model.statusLine.length <= 70, true);
-  assert.match(model.statusLine, /debug/);
+  assert.equal(model.providerLine.length <= 70, true);
+  assert.match(model.providerLine, /debug/);
 });
 
 test("theme parser supports dark, light, and compact defaults", () => {
@@ -313,6 +352,72 @@ test("theme parser supports dark, light, and compact defaults", () => {
 
 test("status bar includes debug state when enabled", () => {
   assert.deepEqual(statusBarParts({ busy: false, debug: true }), ["idle", "debug"]);
+});
+
+test("status bar emits quiet model and workspace metadata without session label", () => {
+  const parts = statusBarParts({
+    busy: false,
+    providerStatus: "grok-4.3 via https://api.x.ai/v1 using XAI_API_KEY",
+    cwd: "C:\\Users\\lucas\\Desktop\\grokcode"
+  });
+
+  assert.equal(parts[0], "grok-4.3 | x.ai | XAI_API_KEY");
+  assert.equal(parts.includes("SESSION"), false);
+  assert.equal(parts.includes("grokcode"), true);
+});
+
+test("status bar model splits left metadata from right state", () => {
+  const model = statusBarModel(
+    {
+      busy: true,
+      debug: true,
+      providerStatus: "grok-4.3 via https://api.x.ai/v1 using XAI_API_KEY",
+      cwd: "C:\\Users\\lucas\\Desktop\\grokcode",
+      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 }
+    },
+    96
+  );
+
+  assert.match(model.left, /grok-4\.3/);
+  assert.match(model.left, /grokcode/);
+  assert.match(model.left, /tokens/);
+  assert.equal(model.right, "working | debug");
+  assert.equal(model.left.includes("working"), false);
+});
+
+test("help panel model lists terminal commands", () => {
+  const model = helpPanelModel();
+
+  assert.equal(model.title, "HELP commands");
+  assert.equal(model.lines.some((line) => line.includes("/help")), true);
+  assert.equal(model.lines.some((line) => line.includes("/retry")), true);
+  assert.equal(model.lines.some((line) => line.includes("Tab")), true);
+});
+
+test("message list keeps empty streaming assistant placeholder while busy", () => {
+  const items = messageListItems(
+    [
+      { id: "user_1", role: "user", content: "hello", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "assistant_1", role: "assistant", content: "", createdAt: "2026-01-01T00:00:01.000Z" }
+    ],
+    true
+  );
+
+  assert.equal(items.length, 2);
+  assert.equal(items[1]?.placeholder, true);
+});
+
+test("message list hides empty assistant placeholder when idle", () => {
+  const items = messageListItems(
+    [
+      { id: "user_1", role: "user", content: "hello", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "assistant_1", role: "assistant", content: "", createdAt: "2026-01-01T00:00:01.000Z" }
+    ],
+    false
+  );
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.message.role, "user");
 });
 
 test("mergeToolEvent replaces existing call state without changing order", () => {

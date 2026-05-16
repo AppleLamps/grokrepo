@@ -16,6 +16,7 @@ import { readDebugLogTail, writeDebugLog, type DebugLogViewEntry } from "../util
 import { Header } from "./header.js";
 import { ChatInput } from "./input.js";
 import { ChatOutput, isExpandableSearchEvent } from "./output.js";
+import { StatusBar } from "./status-bar.js";
 import { getTheme } from "./theme.js";
 
 interface AppProps {
@@ -26,6 +27,7 @@ interface AppProps {
   registry: ToolRegistry;
   searchProvider: SearchProvider;
   session: Session;
+  sessionPath?: string;
 }
 
 interface PendingApproval {
@@ -34,7 +36,7 @@ interface PendingApproval {
   selectedFiles: string[];
 }
 
-export function App({ config, contextBuilder, provider, imageProvider, registry, searchProvider, session }: AppProps) {
+export function App({ config, contextBuilder, provider, imageProvider, registry, searchProvider, session, sessionPath }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<SessionMessage[]>([...session.listMessages()]);
   const [toolEvents, setToolEvents] = useState<ToolRuntimeEvent[]>([]);
@@ -47,6 +49,7 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
   const [lastSubmittedValue, setLastSubmittedValue] = useState<string>();
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugEntries, setDebugEntries] = useState<DebugLogViewEntry[]>([]);
+  const [helpVisible, setHelpVisible] = useState(false);
   const theme = useMemo(() => getTheme(config.uiTheme ?? "dark"), [config.uiTheme]);
 
   const status = useMemo(() => {
@@ -148,8 +151,20 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
     if (value === "/debug") {
       const entries = await readDebugLogTail(process.cwd(), 10);
       setDebugEntries(entries);
-      setDebugVisible((current) => !current);
-      void writeDebugLog(process.cwd(), config.debug, "debug.toggle", { visible: !debugVisible, entries: entries.length });
+      setDebugVisible((current) => {
+        const visible = !current;
+        void writeDebugLog(process.cwd(), config.debug, "debug.toggle", { visible, entries: entries.length });
+        return visible;
+      });
+      return;
+    }
+
+    if (value === "/help") {
+      setHelpVisible((current) => {
+        const visible = !current;
+        void writeDebugLog(process.cwd(), config.debug, "help.toggle", { visible });
+        return visible;
+      });
       return;
     }
 
@@ -212,6 +227,7 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
     void writeDebugLog(process.cwd(), config.debug, options.retry ? "chat.retry" : "chat.submit", { value });
 
     session.addUserMessage(value);
+    await persistSession();
 
     const assistantId = `stream_${Date.now().toString(36)}`;
     const startedAt = new Date().toISOString();
@@ -230,6 +246,7 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
         registry,
         searchProvider,
         cwd: process.cwd(),
+        onSessionChange: () => persistSession(),
         onDelta: (delta) => {
           setMessages((current) =>
             current.map((message) =>
@@ -277,6 +294,7 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
       }
     } catch (cause) {
       setMessages([...session.listMessages()]);
+      await persistSession();
       const message = cause instanceof Error ? cause.message : "Unknown chat error.";
       setError(message);
       void writeDebugLog(process.cwd(), config.debug, "chat.error", { message });
@@ -292,9 +310,23 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
     setDebugEntries(await readDebugLogTail(process.cwd(), 10));
   }
 
+  async function persistSession(): Promise<void> {
+    if (!sessionPath) {
+      return;
+    }
+
+    try {
+      await session.save(sessionPath);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Session save failed.";
+      setError(`Session save failed: ${message}`);
+      void writeDebugLog(process.cwd(), config.debug, "session.save_failed", { message });
+    }
+  }
+
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Header status={status} busy={busy} theme={theme} debug={Boolean(config.debug)} />
+      <Header status={status} busy={busy} cwd={process.cwd()} theme={theme} debug={Boolean(config.debug)} />
       <Box marginTop={1} flexDirection="column">
         <ChatOutput
           messages={messages}
@@ -307,6 +339,7 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
           contextMetadata={contextMetadata}
           debugEntries={debugEntries}
           debugVisible={debugVisible}
+          helpVisible={helpVisible}
           busy={busy}
           debug={Boolean(config.debug)}
           theme={theme}
@@ -315,6 +348,16 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
       <Box marginTop={1}>
         <ChatInput disabled={busy || Boolean(pendingApproval)} onSubmit={(value) => void handleSubmit(value)} theme={theme} />
       </Box>
+      <StatusBar
+        busy={busy}
+        error={error}
+        usage={usage}
+        contextMetadata={contextMetadata}
+        debug={Boolean(config.debug)}
+        providerStatus={status}
+        cwd={process.cwd()}
+        theme={theme}
+      />
     </Box>
   );
 }

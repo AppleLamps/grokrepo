@@ -14,7 +14,7 @@ This runs the test suite, builds `dist/`, and runs `npm pack --dry-run`.
 Current verified local result:
 
 - `npm run build` passed.
-- `npm test` passed with 124 tests.
+- `npm test` passed with 134 tests.
 - `npm run verify:package` passed during Phase 8 packaging.
 
 ## Publish

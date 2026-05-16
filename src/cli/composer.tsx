@@ -2,6 +2,7 @@ import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 
 import { getTheme, type UiTheme } from "./theme.js";
+import { separator } from "./ui-format.js";
 
 interface ComposerProps {
   disabled: boolean;
@@ -13,6 +14,7 @@ export interface ComposerState {
   prompt: string;
   cursor: string;
   hint: string;
+  separator: string;
 }
 
 export interface EditableLineState {
@@ -26,11 +28,16 @@ interface HistoryState {
   value: string;
 }
 
-export function composerState(disabled: boolean): ComposerState {
+export function composerState(disabled: boolean, width = process.stdout.columns ?? 80): ComposerState {
+  const enabledHint = width < 72
+    ? "/help /exit /clip | arrows edit"
+    : "/help /exit /retry /debug /clip | arrows/history | ctrl+a/e/u/k/w";
+
   return {
     prompt: disabled ? "..." : ">  ",
     cursor: disabled ? "" : "_",
-    hint: disabled ? "waiting for current action" : "/exit /retry /debug /clip arrows edit history ctrl+a/e/u/k/w"
+    hint: disabled ? "waiting for current action" : enabledHint,
+    separator: separator(Math.max(24, width - 2))
   };
 }
 
@@ -261,19 +268,23 @@ export function Composer({ disabled, onSubmit, theme = getTheme("dark") }: Compo
     }
   });
 
-  const state = composerState(disabled);
+  const state = composerState(disabled, process.stdout.columns ?? 80);
   const safeCursor = clampCursor(value, cursor);
   const beforeCursor = value.slice(0, safeCursor);
   const cursorCharacter = value[safeCursor] ?? " ";
   const afterCursor = value.slice(safeCursor + 1);
 
   return (
-    <Box>
-      <Text color={disabled ? theme.muted : theme.accent}>{state.prompt}</Text>
-      <Text>{disabled ? value : beforeCursor}</Text>
-      {!disabled && <Text inverse>{cursorCharacter}</Text>}
-      {!disabled && <Text>{afterCursor}</Text>}
-      <Text color={theme.muted}> {state.hint}</Text>
+    <Box flexDirection="column">
+      <Text color={theme.border}>{state.separator}</Text>
+      <Box>
+        <Text color={disabled ? theme.muted : theme.accent}>{state.prompt}</Text>
+        <Text>{disabled ? value : beforeCursor}</Text>
+        {!disabled && <Text inverse>{cursorCharacter}</Text>}
+        {!disabled && <Text>{afterCursor}</Text>}
+      </Box>
+      <Text color={theme.border}>{state.separator}</Text>
+      <Text color={theme.muted}>  {state.hint}</Text>
     </Box>
   );
 }

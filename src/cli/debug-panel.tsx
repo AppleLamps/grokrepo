@@ -46,7 +46,7 @@ export function DebugPanel({ entries, visible, theme = getTheme("dark") }: Debug
         <Text color={theme.muted}>{model.empty}</Text>
       ) : (
         model.lines.map((line, index) => (
-          <Text key={`${index}-${line}`} color={theme.muted}>
+          <Text key={`debug_line_${index}`} color={theme.muted}>
             {line}
           </Text>
         ))

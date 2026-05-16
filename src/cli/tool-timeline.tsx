@@ -20,6 +20,18 @@ export interface ToolTimelineItem {
   details?: SearchResultDetails;
 }
 
+export function toolTimelineHint(items: readonly ToolTimelineItem[], expandedToolEventIds: readonly string[] = []): string | undefined {
+  const latestExpandable = [...items].reverse().find((item) => item.expandable);
+
+  if (!latestExpandable) {
+    return undefined;
+  }
+
+  return expandedToolEventIds.includes(latestExpandable.id)
+    ? "Tab collapses latest search details"
+    : "Tab expands latest search details";
+}
+
 export function groupToolEvents(events: readonly ToolRuntimeEvent[]): ToolTimelineItem[] {
   const grouped = new Map<string, ToolRuntimeEvent[]>();
 
@@ -45,6 +57,7 @@ export function groupToolEvents(events: readonly ToolRuntimeEvent[]): ToolTimeli
 
 export function ToolTimeline({ events, expandedToolEventIds = [], theme = getTheme("dark") }: ToolTimelineProps) {
   const items = groupToolEvents(events);
+  const hint = toolTimelineHint(items, expandedToolEventIds);
 
   if (items.length === 0) {
     return null;
@@ -52,7 +65,7 @@ export function ToolTimeline({ events, expandedToolEventIds = [], theme = getThe
 
   return (
     <Box flexDirection="column">
-      <Text color="magenta" bold>{sectionLabel("tools")}</Text>
+      <Text color={theme.accent} bold>{sectionLabel("tools")}</Text>
       {items.map((item) => {
         const expanded = expandedToolEventIds.includes(item.id);
 
@@ -60,7 +73,7 @@ export function ToolTimeline({ events, expandedToolEventIds = [], theme = getThe
           <Box key={item.id} flexDirection="column">
             <Text color={item.color}>
               {item.tool} [{item.label}] {item.summary}
-              {item.expandable && !expanded ? " (tab details)" : ""}
+              {item.expandable ? (expanded ? " (tab collapse)" : " (tab details)") : ""}
             </Text>
             {expanded && item.details && (
               <Box flexDirection="column" marginLeft={2}>
@@ -84,6 +97,7 @@ export function ToolTimeline({ events, expandedToolEventIds = [], theme = getThe
           </Box>
         );
       })}
+      {hint && <Text color={theme.muted}>{hint}</Text>}
     </Box>
   );
 }

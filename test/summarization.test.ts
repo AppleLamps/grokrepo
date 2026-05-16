@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { renderSummarizationPrompt, GrokProvider } from "../src/providers/grok.js";
 import { Session, type ConversationSummary, type SerializedSession } from "../src/runtime/session.js";
+import { defaultSessionPath, restoreOrCreateSession, saveSession } from "../src/runtime/session-store.js";
 import {
   summarizeSessionIfNeeded,
   type ConversationSummarizationInput,
@@ -105,6 +106,44 @@ test("session saves and restores a full disk round trip", async () => {
   const restored = await Session.restore(sessionPath);
 
   assert.deepEqual(restored.serialize(), session.serialize());
+});
+
+test("restoreOrCreateSession restores current workspace session", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-session-store-"));
+  const sessionPath = defaultSessionPath(cwd);
+  const session = new Session();
+  session.addUserMessage("persist this");
+  await saveSession(session, sessionPath);
+
+  const restored = await restoreOrCreateSession(cwd);
+
+  assert.equal(restored.path, sessionPath);
+  assert.equal(restored.restored, true);
+  assert.equal(restored.error, undefined);
+  assert.equal(restored.session.listMessages().some((message) => message.content === "persist this"), true);
+});
+
+test("restoreOrCreateSession falls back to fresh session when current file is missing", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-session-store-"));
+  const restored = await restoreOrCreateSession(cwd);
+
+  assert.equal(restored.path, defaultSessionPath(cwd));
+  assert.equal(restored.restored, false);
+  assert.equal(restored.error, undefined);
+  assert.equal(restored.session.listMessages()[0]?.role, "system");
+});
+
+test("restoreOrCreateSession reports corrupt session and starts fresh", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-session-store-"));
+  const sessionPath = defaultSessionPath(cwd);
+  await mkdir(path.dirname(sessionPath), { recursive: true });
+  await writeFile(sessionPath, "{bad json", "utf8");
+
+  const restored = await restoreOrCreateSession(cwd);
+
+  assert.equal(restored.restored, false);
+  assert.equal(restored.error?.code, "restore_failed");
+  assert.equal(restored.session.listMessages()[0]?.role, "system");
 });
 
 test("toChatMessages prepends context when restored session has no system message", () => {

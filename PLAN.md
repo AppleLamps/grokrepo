@@ -17,9 +17,9 @@ Current status:
 
 Verification status:
 - Latest verified build: `npm run build` passed.
-- Latest verified tests: `npm test` passed with 124 tests.
+- Latest verified tests: `npm test` passed with 134 tests.
 - Latest local implementation includes Phase 1 through Phase 7, Phase 8 packaging work, system prompt polish, tool documentation, and test hardening.
-- Test hardening added focused coverage for filesystem tools, patch editing edge cases, session persistence, path safety, tool lifecycle events, debug logs, UI summaries, and git-aware context scanning.
+- Test hardening added focused coverage for filesystem tools, patch editing edge cases, session persistence, session restore fallback, path safety, tool lifecycle events, debug logs, UI summaries, and git-aware context scanning.
 - Phase 8 packaging metadata, docs, demo guide, and dry-run packaging are present locally and pass. npm publishing is still pending.
 
 ---
@@ -480,6 +480,7 @@ src/
     composer.tsx
     debug-panel.tsx
     header.tsx
+    help-panel.tsx
     input.tsx
     message-list.tsx
     output.tsx
@@ -504,6 +505,7 @@ src/
   runtime/
     chat.ts
     session.ts
+    session-store.ts
     summarization.ts
 
   tools/

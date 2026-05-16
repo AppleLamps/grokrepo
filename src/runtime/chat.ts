@@ -54,6 +54,7 @@ export interface RunChatTurnOptions {
   registry: ToolRegistry;
   cwd: string;
   onDelta: (delta: string) => void;
+  onSessionChange?: (session: Session) => void | Promise<void>;
   onToolEvent?: (event: ToolRuntimeEvent) => void;
   requestApproval: (request: ToolApprovalRequest) => Promise<boolean | ToolApprovalDecision>;
   contextBuilder?: ContextBuilder;
@@ -72,6 +73,10 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
     options.provider.summarizeConversation ? options.provider as ConversationSummarizer : undefined,
     options.summarization
   );
+
+  if (summaryMetadata.summarized) {
+    await notifySessionChange(options);
+  }
   const contextMetadata: ContextRuntimeMetadata = {
     ...(turnContext
       ? {
@@ -109,6 +114,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
 
     if (toolCalls.length === 0) {
       options.session.addAssistantMessage(content);
+      await notifySessionChange(options);
       return {
         content,
         usage,
@@ -117,22 +123,29 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
     }
 
     options.session.addAssistantMessage(content, toolCalls);
+    await notifySessionChange(options);
 
     for (const toolCall of toolCalls) {
       const result = await executeToolCall(toolCall, options);
       options.session.addToolMessage(toolCall.id, JSON.stringify(result));
+      await notifySessionChange(options);
     }
   }
 
   const content = "Stopped after reaching the tool round limit.";
   options.onDelta(content);
   options.session.addAssistantMessage(content);
+  await notifySessionChange(options);
 
   return {
     content,
     usage,
     context: contextMetadata
   };
+}
+
+async function notifySessionChange(options: RunChatTurnOptions): Promise<void> {
+  await options.onSessionChange?.(options.session);
 }
 
 async function buildTurnContext(options: RunChatTurnOptions): Promise<BuiltContext | undefined> {

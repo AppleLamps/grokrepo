@@ -71,6 +71,33 @@ test("passive tool call executes and final response continues", async () => {
   assert.equal(session.listMessages().some((message) => message.role === "tool"), true);
 });
 
+test("passive tool turn emits session change notifications for assistant and tool messages", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  const messageCounts: number[] = [];
+
+  registry.register(createTool("read_test", "passive", async () => toolSuccess("read_test", { value: "ok" })));
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "read_test", arguments: "{}" }] }],
+    [{ type: "content", content: "final" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("use the tool");
+
+  await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    onDelta: () => undefined,
+    onSessionChange: (changedSession) => messageCounts.push(changedSession.listMessages().length),
+    requestApproval: async () => false
+  });
+
+  assert.deepEqual(messageCounts, [3, 4, 5]);
+});
+
 test("passive tool emits requested, running, and completed lifecycle events", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
   const registry = new ToolRegistry();
