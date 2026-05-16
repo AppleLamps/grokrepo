@@ -25,6 +25,7 @@ export interface ToolExecutionContext {
   approval?: ToolApprovalDecision;
   searchProvider?: SearchProviderLike;
   imageProvider?: ImageProviderLike;
+  signal?: AbortSignal;
 }
 
 export interface SearchProviderLike {

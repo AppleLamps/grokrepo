@@ -30,7 +30,7 @@ const runShellTool: Tool = {
     }
 
     const risk = classifyShellCommand(command);
-    const result = await runShellCommand(command, { cwd: context.cwd });
+    const result = await runShellCommand(command, { cwd: context.cwd, signal: context.signal });
     const output = {
       stdout: result.stdout,
       stderr: result.stderr,

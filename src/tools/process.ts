@@ -9,8 +9,12 @@ export interface CommandResult {
 export function runFileCommand(
   file: string,
   args: string[],
-  options: { cwd: string; timeoutMs?: number }
+  options: { cwd: string; timeoutMs?: number; signal?: AbortSignal }
 ): Promise<CommandResult> {
+  if (options.signal?.aborted) {
+    return Promise.resolve(abortedResult());
+  }
+
   return new Promise((resolve) => {
     execFile(
       file,
@@ -19,7 +23,8 @@ export function runFileCommand(
         cwd: options.cwd,
         timeout: options.timeoutMs ?? 120_000,
         maxBuffer: 1024 * 1024 * 10,
-        windowsHide: true
+        windowsHide: true,
+        signal: options.signal
       },
       (error, stdout, stderr) => {
         resolve({
@@ -32,7 +37,11 @@ export function runFileCommand(
   });
 }
 
-export function runShellCommand(command: string, options: { cwd: string; timeoutMs?: number }): Promise<CommandResult> {
+export function runShellCommand(command: string, options: { cwd: string; timeoutMs?: number; signal?: AbortSignal }): Promise<CommandResult> {
+  if (options.signal?.aborted) {
+    return Promise.resolve(abortedResult());
+  }
+
   return new Promise((resolve) => {
     exec(
       command,
@@ -40,7 +49,8 @@ export function runShellCommand(command: string, options: { cwd: string; timeout
         cwd: options.cwd,
         timeout: options.timeoutMs ?? 120_000,
         maxBuffer: 1024 * 1024 * 10,
-        windowsHide: true
+        windowsHide: true,
+        signal: options.signal
       },
       (error, stdout, stderr) => {
         resolve({
@@ -62,5 +72,17 @@ function getExitCode(error: Error | null): number {
     return error.code;
   }
 
+  if ("code" in error && error.code === "ABORT_ERR") {
+    return 130;
+  }
+
   return 127;
+}
+
+function abortedResult(): CommandResult {
+  return {
+    stdout: "",
+    stderr: "Command aborted.",
+    exitCode: 130
+  };
 }

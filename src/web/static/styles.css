@@ -1,0 +1,219 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #111318;
+  color: #eceff4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #111318;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid #4c566a;
+  border-radius: 6px;
+  background: #252a34;
+  color: #eceff4;
+  cursor: pointer;
+  padding: 0.55rem 0.8rem;
+}
+
+button:hover {
+  background: #303847;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100vh;
+}
+
+.topbar,
+.status {
+  border-bottom: 1px solid #2e3440;
+  padding: 0.8rem 1rem;
+}
+
+.topbar {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+  text-transform: uppercase;
+}
+
+#providerStatus,
+.status {
+  color: #a7b0c0;
+  font-size: 0.84rem;
+}
+
+.mode {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.mode button.active {
+  background: #6d8fcb;
+  border-color: #89a6d6;
+  color: #10131a;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+  min-height: 0;
+}
+
+.chat {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.messages,
+.side {
+  overflow: auto;
+  padding: 1rem;
+}
+
+.message {
+  border-bottom: 1px solid #252a34;
+  padding: 0.8rem 0;
+  white-space: pre-wrap;
+}
+
+.message-role {
+  color: #88c0d0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.message.tool {
+  color: #a7b0c0;
+  font-size: 0.88rem;
+}
+
+.composer {
+  border-top: 1px solid #2e3440;
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+}
+
+textarea {
+  background: #171b22;
+  border: 1px solid #3b4252;
+  border-radius: 6px;
+  color: #eceff4;
+  min-height: 5rem;
+  padding: 0.75rem;
+  resize: vertical;
+}
+
+.composer-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.side {
+  border-left: 1px solid #2e3440;
+  display: grid;
+  gap: 1rem;
+  grid-auto-rows: max-content;
+}
+
+.approval,
+.tool {
+  background: #171b22;
+  border: 1px solid #2e3440;
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.empty {
+  color: #a7b0c0;
+}
+
+.approval pre,
+.tool pre {
+  color: #d8dee9;
+  font-size: 0.78rem;
+  margin: 0.5rem 0;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.approval-actions,
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.file-list {
+  display: grid;
+}
+
+.tool {
+  margin-bottom: 0.6rem;
+}
+
+.tool-title {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.status {
+  border-bottom: 0;
+  border-top: 1px solid #2e3440;
+}
+
+@media (max-width: 820px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .side {
+    border-left: 0;
+    border-top: 1px solid #2e3440;
+  }
+}

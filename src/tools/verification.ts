@@ -119,7 +119,7 @@ async function runVerificationCommands(
 
   for (const command of commands) {
     const commandStartedAt = Date.now();
-    const result = await runShellCommand(command.command, { cwd: context.cwd });
+    const result = await runShellCommand(command.command, { cwd: context.cwd, signal: context.signal });
     const commandResult = {
       command: command.command,
       stdout: result.stdout,

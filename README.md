@@ -107,6 +107,18 @@ Exit codes:
 - `2`: active tool denied or blocked
 - `3`: verification failed
 
+## Web UI
+
+Start the optional local web interface:
+
+```bash
+grokcode --web
+grokcode --web --port 4141
+grokcode --web --host 127.0.0.1 --port 4141
+```
+
+The web UI binds to `127.0.0.1` by default and reuses the same workspace session, tool approvals, Plan/Act mode, and streaming chat runtime as the terminal UI.
+
 ## Verification
 
 Run these before publishing or pushing major changes:

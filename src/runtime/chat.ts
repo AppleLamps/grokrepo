@@ -12,6 +12,7 @@ import {
 import { runFileCommand } from "../tools/process.js";
 import { classifyShellCommand, type ShellRisk } from "../tools/shell-risk.js";
 import { parseToolArguments } from "../tools/args.js";
+import type { GrokStreamOptions } from "../providers/grok.js";
 import type {
   ParsedToolCallRequest,
   Tool,
@@ -71,9 +72,11 @@ export interface RunChatTurnOptions {
   searchProvider?: SearchProviderLike;
   maxToolRounds?: number;
   summarization?: Partial<SummarizationOptions>;
+  signal?: AbortSignal;
 }
 
 export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurnResult> {
+  throwIfAborted(options.signal);
   const maxToolRounds = options.maxToolRounds ?? 6;
   let usage: GrokUsage | undefined;
   let verification: VerificationRuntimeStatus = { state: "not_run" };
@@ -87,6 +90,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
   if (summaryMetadata.summarized) {
     await notifySessionChange(options);
   }
+  throwIfAborted(options.signal);
   const contextMetadata: ContextRuntimeMetadata = {
     ...(turnContext
       ? {
@@ -101,13 +105,16 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
   };
 
   for (let round = 0; round < maxToolRounds; round += 1) {
+    throwIfAborted(options.signal);
     let content = "";
     let toolCalls: ToolCallRequest[] = [];
 
     for await (const event of options.provider.streamChat(
       options.session.toChatMessages(turnContext?.prompt),
-      options.registry.toChatCompletionTools({ includeActive: options.session.getTaskMode() !== "plan" })
+      options.registry.toChatCompletionTools({ includeActive: options.session.getTaskMode() !== "plan" }),
+      { signal: options.signal } satisfies GrokStreamOptions
     )) {
+      throwIfAborted(options.signal);
       if (event.type === "content" && event.content) {
         content += event.content;
         options.onDelta(event.content);
@@ -137,6 +144,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
     await notifySessionChange(options);
 
     for (const toolCall of toolCalls) {
+      throwIfAborted(options.signal);
       const result = await executeToolCall(toolCall, options);
       verification = updateVerificationStatus(verification, toolCall.name, result);
       options.session.addToolMessage(toolCall.id, JSON.stringify(result));
@@ -183,6 +191,7 @@ async function executeToolCall(
   call: ToolCallRequest,
   options: RunChatTurnOptions
 ): Promise<ToolExecutionResult> {
+  throwIfAborted(options.signal);
   const parsed = parseToolArguments(call.arguments);
 
   if (!parsed.ok) {
@@ -248,7 +257,8 @@ async function executeToolCall(
       args: parsed.value
     });
 
-    approval = normalizeApprovalDecision(await options.requestApproval(approvalRequest));
+    approval = normalizeApprovalDecision(await waitForApproval(approvalRequest, options));
+    throwIfAborted(options.signal);
 
     if (!approval.approved) {
       const result = toolFailure(tool.name, "approval_denied", "User denied tool execution.");
@@ -297,7 +307,8 @@ async function executeToolCall(
     cwd: options.cwd,
     approval,
     imageProvider: options.imageProvider,
-    searchProvider: options.searchProvider
+    searchProvider: options.searchProvider,
+    signal: options.signal
   });
 
   options.onToolEvent?.({
@@ -310,6 +321,43 @@ async function executeToolCall(
   });
 
   return result;
+}
+
+function waitForApproval(
+  request: ToolApprovalRequest,
+  options: RunChatTurnOptions
+): Promise<boolean | ToolApprovalDecision> {
+  if (!options.signal) {
+    return options.requestApproval(request);
+  }
+
+  return Promise.race([
+    options.requestApproval(request),
+    waitForAbort(options.signal)
+  ]);
+}
+
+function waitForAbort(signal: AbortSignal): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    if (signal.aborted) {
+      reject(createAbortError());
+      return;
+    }
+
+    signal.addEventListener("abort", () => reject(createAbortError()), { once: true });
+  });
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
+
+function createAbortError(): Error {
+  const error = new Error("Operation aborted.");
+  error.name = "AbortError";
+  return error;
 }
 
 async function createApprovalRequest(call: ParsedToolCallRequest, tool: Tool, args: unknown, cwd: string): Promise<ToolApprovalRequest> {

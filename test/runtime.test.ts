@@ -9,6 +9,7 @@ import type { ContextBuilder } from "../src/context/index.js";
 import type { GrokStreamDelta } from "../src/providers/grok.js";
 import { runChatTurn } from "../src/runtime/chat.js";
 import { parseHeadlessArgs, renderHeadlessJson, runHeadlessTurn } from "../src/runtime/headless.js";
+import { parseLaunchArgs } from "../src/runtime/launch-args.js";
 import { Session } from "../src/runtime/session.js";
 import type { ConversationSummarizationInput, SummarizationResult } from "../src/runtime/summarization.js";
 import { runFileCommand } from "../src/tools/process.js";
@@ -393,6 +394,36 @@ test("headless args distinguish interactive and one-shot modes", () => {
     }
   });
   assert.equal(parseHeadlessArgs(["--json"]).error, "Headless mode requires a prompt argument.");
+});
+
+test("launch args preserve headless behavior and parse web mode", () => {
+  assert.deepEqual(parseLaunchArgs([]), { mode: "interactive" });
+  assert.deepEqual(parseLaunchArgs(["--json", "--yes-safe", "run tests"]), {
+    mode: "headless",
+    options: {
+      prompt: "run tests",
+      output: "json",
+      yesSafe: true
+    }
+  });
+  assert.deepEqual(parseLaunchArgs(["--web"]), {
+    mode: "web",
+    options: {
+      host: "127.0.0.1",
+      port: 4141
+    }
+  });
+  assert.deepEqual(parseLaunchArgs(["--web", "--port", "4142", "--host", "localhost"]), {
+    mode: "web",
+    options: {
+      host: "localhost",
+      port: 4142
+    }
+  });
+  assert.equal(parseLaunchArgs(["--web", "--port", "0"]).mode, "error");
+  assert.equal(parseLaunchArgs(["--web", "--host", "0.0.0.0"]).mode, "error");
+  assert.equal(parseLaunchArgs(["--web", "prompt"]).mode, "error");
+  assert.equal(parseLaunchArgs(["--web", "--json"]).mode, "error");
 });
 
 test("headless mode denies active tools by default and exits with code 2", async () => {

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GrokCode</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>GrokCode</h1>
+          <p id="providerStatus">Starting...</p>
+        </div>
+        <div class="mode">
+          <button id="planMode" type="button">Plan</button>
+          <button id="actMode" type="button">Act</button>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <section class="chat" aria-label="Conversation">
+          <div id="messages" class="messages"></div>
+          <form id="composer" class="composer">
+            <textarea id="prompt" rows="3" placeholder="Ask GrokCode"></textarea>
+            <div class="composer-actions">
+              <button id="retry" type="button">Retry</button>
+              <button id="stop" type="button">Stop</button>
+              <button id="send" type="submit">Send</button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="side" aria-label="Tools and approvals">
+          <section>
+            <h2>Approval</h2>
+            <div id="approval" class="approval empty">No approval pending.</div>
+          </section>
+          <section>
+            <h2>Tools</h2>
+            <div id="tools" class="tools empty">No tool activity yet.</div>
+          </section>
+        </aside>
+      </section>
+
+      <footer id="status" class="status">Idle</footer>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

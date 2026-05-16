@@ -16,10 +16,10 @@
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-web-assets.mjs",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test test/tools.test.ts test/runtime.test.ts test/editing.test.ts test/search.test.ts test/images.test.ts test/context.test.ts test/summarization.test.ts test/workflows.test.ts test/ux.test.ts",
+    "test": "node --import tsx --test test/tools.test.ts test/runtime.test.ts test/editing.test.ts test/search.test.ts test/images.test.ts test/context.test.ts test/summarization.test.ts test/workflows.test.ts test/ux.test.ts test/web.test.ts",
     "prepack": "npm run build",
     "pack:dry-run": "npm pack --dry-run",
     "verify:package": "npm run build && npm pack --dry-run"

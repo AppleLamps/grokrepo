@@ -24,6 +24,10 @@ export interface GrokStreamDelta {
   usage?: GrokUsage;
 }
 
+export interface GrokStreamOptions {
+  signal?: AbortSignal;
+}
+
 export class GrokProvider {
   private readonly client?: OpenAI;
   private readonly config: AppConfig;
@@ -119,10 +123,13 @@ export class GrokProvider {
 
   async *streamChat(
     messages: ChatCompletionMessageParam[],
-    tools: ChatCompletionTool[] = []
+    tools: ChatCompletionTool[] = [],
+    options: GrokStreamOptions = {}
   ): AsyncGenerator<GrokStreamDelta> {
+    throwIfAborted(options.signal);
+
     if (this.config.mock) {
-      yield* this.streamMockResponse(messages);
+      yield* this.streamMockResponse(messages, options.signal);
       return;
     }
 
@@ -130,25 +137,29 @@ export class GrokProvider {
       throw new Error("Missing XAI_API_KEY. Add it to .env, or set GROKCODE_MOCK=true for local verification.");
     }
 
-    const stream = await this.client.chat.completions.create({
-      model: this.config.model,
-      messages,
-      ...(tools.length > 0
-        ? {
-            tools,
-            tool_choice: "auto" as const
-          }
-        : {}),
-      parallel_tool_calls: false,
-      stream: true,
-      stream_options: {
-        include_usage: true
-      }
-    });
+    const stream = await this.client.chat.completions.create(
+      {
+        model: this.config.model,
+        messages,
+        ...(tools.length > 0
+          ? {
+              tools,
+              tool_choice: "auto" as const
+            }
+          : {}),
+        parallel_tool_calls: false,
+        stream: true,
+        stream_options: {
+          include_usage: true
+        }
+      },
+      options.signal ? { signal: options.signal } : undefined
+    );
 
     const toolCallAccumulator = new ToolCallAccumulator();
 
     for await (const chunk of stream) {
+      throwIfAborted(options.signal);
       for (const event of parseChunk(chunk, toolCallAccumulator)) {
         yield event;
       }
@@ -164,7 +175,8 @@ export class GrokProvider {
   }
 
   private async *streamMockResponse(
-    messages: ChatCompletionMessageParam[]
+    messages: ChatCompletionMessageParam[],
+    signal?: AbortSignal
   ): AsyncGenerator<GrokStreamDelta> {
     const lastUserMessage = [...messages]
       .reverse()
@@ -173,7 +185,8 @@ export class GrokProvider {
     const response = `Mock Grok response received: ${typeof lastUserMessage === "string" ? lastUserMessage : ""}`;
 
     for (const token of response.split(/(\s+)/).filter(Boolean)) {
-      await delay(15);
+      await delay(15, signal);
+      throwIfAborted(signal);
       yield {
         type: "content",
         content: token
@@ -188,6 +201,16 @@ export class GrokProvider {
         totalTokens: estimateTokens(`${messages.map((message) => message.content).join("\n")}\n${response}`)
       }
     };
+  }
+}
+
+export function isAbortError(cause: unknown): boolean {
+  return cause instanceof Error && cause.name === "AbortError";
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw createAbortError();
   }
 }
 
@@ -270,10 +293,29 @@ export function toAssistantToolCalls(toolCalls: ToolCallRequest[]): ChatCompleti
   }));
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(createAbortError());
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(createAbortError());
+    };
+
+    signal?.addEventListener("abort", abort, { once: true });
   });
+}
+
+function createAbortError(): Error {
+  const error = new Error("Operation aborted.");
+  error.name = "AbortError";
+  return error;
 }
 
 function estimateTokens(text: string): number {

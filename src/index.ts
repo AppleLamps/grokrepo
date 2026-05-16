@@ -9,15 +9,17 @@ import { DefaultContextBuilder } from "./context/index.js";
 import { GrokProvider } from "./providers/grok.js";
 import { ImageProvider } from "./providers/images.js";
 import { SearchProvider } from "./providers/search.js";
-import { parseHeadlessArgs, renderHeadlessJson, runHeadlessTurn } from "./runtime/headless.js";
+import { renderHeadlessJson, runHeadlessTurn } from "./runtime/headless.js";
+import { parseLaunchArgs } from "./runtime/launch-args.js";
 import { restoreOrCreateSession, saveSession } from "./runtime/session-store.js";
 import { createDefaultToolRegistry } from "./tools/index.js";
 import { loadConfig } from "./utils/config.js";
 import { writeDebugLog } from "./utils/debug-log.js";
+import { startWebServer } from "./web/server.js";
 
 async function main(): Promise<void> {
-  const parsedArgs = parseHeadlessArgs(process.argv.slice(2));
-  if (parsedArgs.error) {
+  const parsedArgs = parseLaunchArgs(process.argv.slice(2));
+  if (parsedArgs.mode === "error") {
     process.stderr.write(`${parsedArgs.error}\n`);
     process.exitCode = 1;
     return;
@@ -58,6 +60,40 @@ async function main(): Promise<void> {
 
     await saveSession(session, restoredSession.path);
     process.exitCode = result.exitCode;
+    return;
+  }
+
+  if (parsedArgs.mode === "web") {
+    const handle = await startWebServer({
+      config,
+      contextBuilder,
+      provider,
+      imageProvider,
+      registry,
+      searchProvider,
+      session,
+      sessionPath: restoredSession.path,
+      cwd: process.cwd(),
+      host: parsedArgs.options.host,
+      port: parsedArgs.options.port
+    });
+
+    process.stdout.write(`GrokCode web UI: ${handle.url}\n`);
+
+    let shuttingDown = false;
+    const shutdown = async (): Promise<void> => {
+      if (shuttingDown) {
+        return;
+      }
+
+      shuttingDown = true;
+      await handle.close();
+      await saveSession(session, restoredSession.path);
+      process.exit(0);
+    };
+
+    process.once("SIGINT", () => void shutdown());
+    process.once("SIGTERM", () => void shutdown());
     return;
   }
 
