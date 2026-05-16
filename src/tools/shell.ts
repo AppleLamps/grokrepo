@@ -1,5 +1,6 @@
 import { getString } from "./args.js";
 import { runShellCommand } from "./process.js";
+import { classifyShellCommand } from "./shell-risk.js";
 import { toolFailure, toolSuccess, type Tool } from "./types.js";
 
 export function createShellTools(): Tool[] {
@@ -28,6 +29,7 @@ const runShellTool: Tool = {
       return toolFailure("run_shell", "invalid_arguments", "run_shell requires a string command.");
     }
 
+    const risk = classifyShellCommand(command);
     const result = await runShellCommand(command, { cwd: context.cwd });
     const output = {
       stdout: result.stdout,
@@ -36,9 +38,12 @@ const runShellTool: Tool = {
     };
 
     if (result.exitCode === 0) {
-      return toolSuccess("run_shell", output);
+      return toolSuccess("run_shell", output, { risk });
     }
 
-    return toolFailure("run_shell", "command_failed", result.stderr || `Command exited with code ${result.exitCode}.`, output);
+    return toolFailure("run_shell", "command_failed", result.stderr || `Command exited with code ${result.exitCode}.`, {
+      ...output,
+      risk
+    });
   }
 };

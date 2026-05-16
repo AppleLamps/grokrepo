@@ -23,13 +23,17 @@ export function approvalPanelModel(request: ToolApprovalRequest, selectedFiles: 
 
   return {
     title: `${sectionLabel("approval")} ${request.tool.name}`,
-    preview: request.preview,
+    preview: request.risk
+      ? `${request.preview}\nrisk: ${request.risk.level} - ${request.risk.reason}`
+      : request.preview,
     ...(request.kind === "patch" && files.length > 0
       ? { fileSummary: `${selectedFiles.length}/${files.length} files selected` }
       : {}),
     controls: request.kind === "patch"
       ? "1-9 toggle files | enter/y apply selected | a all | s skip all | n deny"
-      : "y allow | n deny"
+      : request.risk?.requiresStrongConfirmation
+        ? "! allow high-risk command | n deny"
+        : "y allow | n deny"
   };
 }
 

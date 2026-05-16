@@ -2,7 +2,9 @@ import { Box, Text } from "ink";
 import path from "node:path";
 
 import type { GrokUsage } from "../providers/grok.js";
+import type { VerificationRuntimeStatus } from "../runtime/chat.js";
 import type { ContextRuntimeMetadata } from "../runtime/summarization.js";
+import type { TaskMode } from "../runtime/session.js";
 import { getTheme, type UiTheme } from "./theme.js";
 import { truncateEnd } from "./ui-format.js";
 
@@ -11,9 +13,11 @@ interface StatusBarProps {
   error?: string;
   usage?: GrokUsage;
   contextMetadata?: ContextRuntimeMetadata;
+  verification?: VerificationRuntimeStatus;
   debug?: boolean;
   providerStatus?: string;
   cwd?: string;
+  taskMode?: TaskMode;
   theme?: UiTheme;
 }
 
@@ -58,7 +62,8 @@ export function statusBarModel(props: StatusBarProps, width = process.stdout.col
 function statusBarLeftParts(props: StatusBarProps): string[] {
   const parts = [
     compactProviderStatus(props.providerStatus),
-    props.cwd ? path.basename(props.cwd) : undefined
+    props.cwd ? path.basename(props.cwd) : undefined,
+    props.taskMode ? `mode ${props.taskMode}` : undefined
   ].filter((part): part is string => Boolean(part));
 
   if (props.usage) {
@@ -77,6 +82,10 @@ function statusBarLeftParts(props: StatusBarProps): string[] {
 
   if (props.contextMetadata?.conversationSummary.error) {
     parts.push(`summary skipped ${props.contextMetadata.conversationSummary.error.code}`);
+  }
+
+  if (props.verification && props.verification.state !== "not_run") {
+    parts.push(verificationSummary(props.verification));
   }
 
   return parts;
@@ -114,4 +123,16 @@ function compactProviderStatus(status: string | undefined): string | undefined {
   return status
     ?.replace(" via https://api.x.ai/v1 using ", " | x.ai | ")
     .replace(" via https://api.x.ai/v1", " | x.ai");
+}
+
+function verificationSummary(status: VerificationRuntimeStatus): string {
+  if (status.state === "passed") {
+    return `verify passed ${status.commandCount} cmd${status.commandCount === 1 ? "" : "s"}`;
+  }
+
+  if (status.state === "failed") {
+    return `verify failed ${status.command}`;
+  }
+
+  return "verify not run";
 }

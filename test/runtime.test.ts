@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,13 +8,16 @@ import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/reso
 import type { ContextBuilder } from "../src/context/index.js";
 import type { GrokStreamDelta } from "../src/providers/grok.js";
 import { runChatTurn } from "../src/runtime/chat.js";
+import { parseHeadlessArgs, renderHeadlessJson, runHeadlessTurn } from "../src/runtime/headless.js";
 import { Session } from "../src/runtime/session.js";
 import type { ConversationSummarizationInput, SummarizationResult } from "../src/runtime/summarization.js";
+import { runFileCommand } from "../src/tools/process.js";
 import { ToolRegistry } from "../src/tools/registry.js";
-import { toolSuccess, type ImageProviderLike, type SearchProviderLike, type Tool } from "../src/tools/types.js";
+import { toolFailure, toolSuccess, type ImageProviderLike, type SearchProviderLike, type Tool } from "../src/tools/types.js";
 
 class ScriptedProvider {
   readonly messages: ChatCompletionMessageParam[][] = [];
+  readonly tools: ChatCompletionTool[][] = [];
   readonly summaryInputs: ConversationSummarizationInput[] = [];
   private readonly turns: GrokStreamDelta[][];
   private readonly summaryResult?: SummarizationResult;
@@ -24,8 +27,9 @@ class ScriptedProvider {
     this.summaryResult = summaryResult;
   }
 
-  async *streamChat(messages: ChatCompletionMessageParam[], _tools?: ChatCompletionTool[]): AsyncGenerator<GrokStreamDelta> {
+  async *streamChat(messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[] = []): AsyncGenerator<GrokStreamDelta> {
     this.messages.push(messages);
+    this.tools.push(tools);
     const nextTurn = this.turns.shift() ?? [];
 
     for (const event of nextTurn) {
@@ -224,6 +228,71 @@ test("active tool approval executes exactly once", async () => {
   assert.equal(result.content, "approved handled");
 });
 
+test("plan mode exposes only passive tool schemas", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  registry.register(createTool("read_test", "passive", async () => toolSuccess("read_test", {})));
+  registry.register(createTool("active_test", "active", async () => toolSuccess("active_test", {})));
+  const provider = new ScriptedProvider([[{ type: "content", content: "planned" }]]);
+  const session = new Session();
+  session.setTaskMode("plan");
+  session.addUserMessage("plan a change");
+
+  await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => false
+  });
+
+  const toolNames = provider.tools[0]?.map((tool) => tool.function.name);
+  assert.deepEqual(toolNames, ["read_test"]);
+  assert.match(String(provider.messages[0]?.[1]?.content), /mode: plan/);
+});
+
+test("plan mode blocks active tool calls without approval or execution", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  let approvals = 0;
+  let executions = 0;
+  const events: string[] = [];
+
+  registry.register(createTool("active_test", "active", async () => {
+    executions += 1;
+    return toolSuccess("active_test", { value: "ran" });
+  }));
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "active_test", arguments: "{}" }] }],
+    [{ type: "content", content: "blocked handled" }]
+  ]);
+  const session = new Session();
+  session.setTaskMode("plan");
+  session.addUserMessage("try implementation");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    onDelta: () => undefined,
+    onToolEvent: (event) => events.push(`${event.tool}:${event.status}:${event.result?.error?.code ?? ""}`),
+    requestApproval: async () => {
+      approvals += 1;
+      return true;
+    }
+  });
+
+  const toolMessage = session.listMessages().find((message) => message.role === "tool")?.content ?? "";
+  assert.equal(result.content, "blocked handled");
+  assert.equal(approvals, 0);
+  assert.equal(executions, 0);
+  assert.match(toolMessage, /plan_mode_blocked/);
+  assert.deepEqual(events, ["active_test:requested:", "active_test:denied:plan_mode_blocked"]);
+});
+
 test("multiple tool calls execute in request order", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
   const registry = new ToolRegistry();
@@ -285,6 +354,241 @@ test("tool loop stops at configured max round limit", async () => {
 
   assert.equal(result.content, "Stopped after reaching the tool round limit.");
   assert.equal(provider.messages.length, 1);
+});
+
+test("session task mode persists and old sessions default to act", () => {
+  const session = new Session();
+  assert.equal(session.getTaskMode(), "act");
+
+  session.setTaskMode("plan");
+  const restored = new Session(session.serialize());
+  const oldRestored = new Session({
+    id: "old_session",
+    messages: session.serialize().messages,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  });
+
+  assert.equal(restored.getTaskMode(), "plan");
+  assert.equal(restored.serialize().taskMode, "plan");
+  assert.equal(oldRestored.getTaskMode(), "act");
+});
+
+test("headless args distinguish interactive and one-shot modes", () => {
+  assert.deepEqual(parseHeadlessArgs([]), { mode: "interactive" });
+  assert.deepEqual(parseHeadlessArgs(["--print", "explain", "repo"]), {
+    mode: "headless",
+    options: {
+      prompt: "explain repo",
+      output: "plain",
+      yesSafe: false
+    }
+  });
+  assert.deepEqual(parseHeadlessArgs(["--json", "--yes-safe", "run tests"]), {
+    mode: "headless",
+    options: {
+      prompt: "run tests",
+      output: "json",
+      yesSafe: true
+    }
+  });
+  assert.equal(parseHeadlessArgs(["--json"]).error, "Headless mode requires a prompt argument.");
+});
+
+test("headless mode denies active tools by default and exits with code 2", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  let executions = 0;
+
+  registry.register(createTool("active_test", "active", async () => {
+    executions += 1;
+    return toolSuccess("active_test", {});
+  }));
+
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "call_1", name: "active_test", arguments: "{}" }] }],
+    [{ type: "content", content: "denied" }]
+  ]);
+
+  const result = await runHeadlessTurn({
+    session: new Session(),
+    provider,
+    registry,
+    cwd,
+    prompt: "try active"
+  });
+
+  assert.equal(result.content, "denied");
+  assert.equal(result.exitCode, 2);
+  assert.equal(executions, 0);
+  assert.equal(result.toolEvents.some((event) => event.status === "denied"), true);
+});
+
+test("headless yes-safe allows verification tools and maps verification failure to code 3", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const successRegistry = new ToolRegistry();
+  let executions = 0;
+  successRegistry.register(createTool("verify_changes", "active", async () => {
+    executions += 1;
+    return toolSuccess("verify_changes", { results: [] });
+  }));
+
+  const successProvider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "verify_1", name: "verify_changes", arguments: "{}" }] }],
+    [{ type: "content", content: "verified" }]
+  ]);
+
+  const success = await runHeadlessTurn({
+    session: new Session(),
+    provider: successProvider,
+    registry: successRegistry,
+    cwd,
+    prompt: "verify",
+    yesSafe: true
+  });
+
+  const failureRegistry = new ToolRegistry();
+  failureRegistry.register(createTool("verify_changes", "active", async () =>
+    toolFailure("verify_changes", "verification_failed", "npm test failed")
+  ));
+  const failureProvider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "verify_2", name: "verify_changes", arguments: "{}" }] }],
+    [{ type: "content", content: "failed" }]
+  ]);
+
+  const failure = await runHeadlessTurn({
+    session: new Session(),
+    provider: failureProvider,
+    registry: failureRegistry,
+    cwd,
+    prompt: "verify",
+    yesSafe: true
+  });
+
+  assert.equal(success.exitCode, 0);
+  assert.equal(executions, 1);
+  assert.equal(failure.exitCode, 3);
+});
+
+test("headless json renderer includes content, events, and exit code", () => {
+  const rendered = renderHeadlessJson({
+    content: "done",
+    exitCode: 0,
+    verification: { state: "passed", commandCount: 1, elapsedMs: 12 },
+    toolEvents: [
+      {
+        id: "call_1",
+        tool: "read_file",
+        permission: "passive",
+        status: "completed",
+        result: { ok: true, tool: "read_file", output: { path: "a.ts" } }
+      }
+    ]
+  });
+  const parsed = JSON.parse(rendered) as { content: string; exitCode: number; verification: { state: string; commandCount: number }; toolEvents: unknown[] };
+
+  assert.equal(parsed.content, "done");
+  assert.equal(parsed.exitCode, 0);
+  assert.deepEqual(parsed.verification, { state: "passed", commandCount: 1, elapsedMs: 12 });
+  assert.equal(parsed.toolEvents.length, 1);
+});
+
+test("runChatTurn tracks passed verification status", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  registry.register(createTool("verify_changes", "active", async () =>
+    toolSuccess("verify_changes", {
+      commands: [{ command: "npm test" }, { command: "npm run build" }],
+      elapsedMs: 42
+    })
+  ));
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "verify_1", name: "verify_changes", arguments: "{}" }] }],
+    [{ type: "content", content: "verified" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("verify");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => true
+  });
+
+  assert.deepEqual(result.verification, { state: "passed", commandCount: 2, elapsedMs: 42 });
+});
+
+test("runChatTurn tracks failed verification status", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  const registry = new ToolRegistry();
+  registry.register(createTool("verify_changes", "active", async () =>
+    toolFailure("verify_changes", "verification_failed", "npm test failed", {
+      failedCommand: "npm test",
+      failureSummary: "npm test failed with exit code 1",
+      elapsedMs: 99
+    })
+  ));
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "verify_1", name: "verify_changes", arguments: "{}" }] }],
+    [{ type: "content", content: "failed" }]
+  ]);
+  const session = new Session();
+  session.addUserMessage("verify");
+
+  const result = await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async () => true
+  });
+
+  assert.deepEqual(result.verification, {
+    state: "failed",
+    command: "npm test",
+    summary: "npm test failed with exit code 1",
+    elapsedMs: 99
+  });
+});
+
+test("git_restore approval preview includes mode, paths, and focused diff", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-runtime-"));
+  assert.equal((await runFileCommand("git", ["init"], { cwd })).exitCode, 0);
+  assert.equal((await runFileCommand("git", ["config", "user.email", "test@example.com"], { cwd })).exitCode, 0);
+  assert.equal((await runFileCommand("git", ["config", "user.name", "Test User"], { cwd })).exitCode, 0);
+  await writeFile(path.join(cwd, "tracked.txt"), "base\n", "utf8");
+  assert.equal((await runFileCommand("git", ["add", "tracked.txt"], { cwd })).exitCode, 0);
+  assert.equal((await runFileCommand("git", ["commit", "-m", "initial"], { cwd })).exitCode, 0);
+  await writeFile(path.join(cwd, "tracked.txt"), "changed\n", "utf8");
+  const registry = new ToolRegistry();
+  registry.register(createTool("git_restore", "active", async () => toolSuccess("git_restore", {})));
+  const provider = new ScriptedProvider([
+    [{ type: "tool_calls", toolCalls: [{ id: "restore_1", name: "git_restore", arguments: "{\"paths\":[\"tracked.txt\"]}" }] }],
+    [{ type: "content", content: "restore denied" }]
+  ]);
+  const previews: string[] = [];
+  const session = new Session();
+  session.addUserMessage("restore file");
+
+  await runChatTurn({
+    session,
+    provider,
+    registry,
+    cwd,
+    onDelta: () => undefined,
+    requestApproval: async (request) => {
+      previews.push(request.preview);
+      return false;
+    }
+  });
+
+  assert.match(previews[0] ?? "", /Mode: restore worktree from HEAD/);
+  assert.match(previews[0] ?? "", /Paths: tracked\.txt/);
+  assert.match(previews[0] ?? "", /changed/);
 });
 
 test("web_search tool call executes and final response continues", async () => {
@@ -527,7 +831,7 @@ test("old conversation turns are summarized before provider call", async () => {
   assert.equal(result.content, "final");
   assert.equal(provider.summaryInputs.length, 1);
   assert.equal(provider.summaryInputs[0]?.messages.some((message) => message.content.includes("old user one")), true);
-  assert.equal(String(provider.messages[0]?.[1]?.content).includes("<conversation_summary>"), true);
+  assert.equal(provider.messages[0]?.some((message) => String(message.content).includes("<conversation_summary>")), true);
   assert.equal(provider.messages[0]?.some((message) => String(message.content).includes("old user one")), false);
   assert.equal(provider.messages[0]?.some((message) => String(message.content).includes("current user request")), true);
   assert.equal(result.context?.conversationSummary.summarized, true);
@@ -592,7 +896,7 @@ test("tool loop still works after conversation compaction", async () => {
   assert.equal(executed, true);
   assert.equal(result.content, "final");
   assert.equal(provider.messages.length, 2);
-  assert.equal(provider.messages.every((messages) => String(messages[1]?.content).includes("<conversation_summary>")), true);
+  assert.equal(provider.messages.every((messages) => messages.some((message) => String(message.content).includes("<conversation_summary>"))), true);
 });
 
 function createTool(

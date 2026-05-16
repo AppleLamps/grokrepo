@@ -9,12 +9,20 @@ import { DefaultContextBuilder } from "./context/index.js";
 import { GrokProvider } from "./providers/grok.js";
 import { ImageProvider } from "./providers/images.js";
 import { SearchProvider } from "./providers/search.js";
+import { parseHeadlessArgs, renderHeadlessJson, runHeadlessTurn } from "./runtime/headless.js";
 import { restoreOrCreateSession, saveSession } from "./runtime/session-store.js";
 import { createDefaultToolRegistry } from "./tools/index.js";
 import { loadConfig } from "./utils/config.js";
 import { writeDebugLog } from "./utils/debug-log.js";
 
 async function main(): Promise<void> {
+  const parsedArgs = parseHeadlessArgs(process.argv.slice(2));
+  if (parsedArgs.error) {
+    process.stderr.write(`${parsedArgs.error}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
   const config = loadConfig();
   const provider = new GrokProvider(config);
   const imageProvider = new ImageProvider(config);
@@ -26,6 +34,31 @@ async function main(): Promise<void> {
 
   if (restoredSession.error) {
     await writeDebugLog(process.cwd(), config.debug, "session.restore_failed", restoredSession.error);
+  }
+
+  if (parsedArgs.mode === "headless" && parsedArgs.options) {
+    const result = await runHeadlessTurn({
+      session,
+      provider,
+      imageProvider,
+      registry,
+      searchProvider,
+      contextBuilder,
+      cwd: process.cwd(),
+      prompt: parsedArgs.options.prompt,
+      yesSafe: parsedArgs.options.yesSafe,
+      onSessionChange: () => saveSession(session, restoredSession.path)
+    });
+
+    if (parsedArgs.options.output === "json") {
+      process.stdout.write(renderHeadlessJson(result));
+    } else {
+      process.stdout.write(result.content.endsWith("\n") ? result.content : `${result.content}\n`);
+    }
+
+    await saveSession(session, restoredSession.path);
+    process.exitCode = result.exitCode;
+    return;
   }
 
   const instance = render(

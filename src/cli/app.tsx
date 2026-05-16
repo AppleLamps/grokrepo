@@ -5,9 +5,10 @@ import type { ContextBuilder } from "../context/index.js";
 import { GrokProvider, type GrokUsage } from "../providers/grok.js";
 import type { ImageProvider } from "../providers/images.js";
 import type { SearchProvider } from "../providers/search.js";
-import { runChatTurn, type ToolApprovalRequest, type ToolRuntimeEvent } from "../runtime/chat.js";
-import type { Session, SessionMessage } from "../runtime/session.js";
+import { runChatTurn, type ToolApprovalRequest, type ToolRuntimeEvent, type VerificationRuntimeStatus } from "../runtime/chat.js";
+import type { Session, SessionMessage, TaskMode } from "../runtime/session.js";
 import type { ContextRuntimeMetadata } from "../runtime/summarization.js";
+import { createCheckpoint, listCheckpoints, restoreCheckpoint } from "../tools/checkpoints.js";
 import { captureClipboardImage } from "../tools/clipboard-image.js";
 import type { ToolRegistry } from "../tools/index.js";
 import type { ToolApprovalDecision } from "../tools/types.js";
@@ -46,10 +47,12 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
   const [error, setError] = useState<string>();
   const [usage, setUsage] = useState<GrokUsage>();
   const [contextMetadata, setContextMetadata] = useState<ContextRuntimeMetadata>();
+  const [verificationStatus, setVerificationStatus] = useState<VerificationRuntimeStatus>({ state: "not_run" });
   const [lastSubmittedValue, setLastSubmittedValue] = useState<string>();
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugEntries, setDebugEntries] = useState<DebugLogViewEntry[]>([]);
   const [helpVisible, setHelpVisible] = useState(false);
+  const [taskMode, setTaskMode] = useState<TaskMode>(session.getTaskMode());
   const theme = useMemo(() => getTheme(config.uiTheme ?? "dark"), [config.uiTheme]);
 
   const status = useMemo(() => {
@@ -131,7 +134,16 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
     }
 
     if (normalized === "y") {
+      if (pendingApproval.request.risk?.requiresStrongConfirmation) {
+        return;
+      }
+
       pendingApproval.resolve({ approved: true });
+      setPendingApproval(undefined);
+    }
+
+    if (normalized === "!") {
+      pendingApproval.resolve({ approved: true, strongConfirmation: true });
       setPendingApproval(undefined);
     }
 
@@ -165,6 +177,29 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
         void writeDebugLog(process.cwd(), config.debug, "help.toggle", { visible });
         return visible;
       });
+      return;
+    }
+
+    if (value === "/plan" || value === "/act") {
+      const nextMode: TaskMode = value === "/plan" ? "plan" : "act";
+      session.setTaskMode(nextMode);
+      setTaskMode(nextMode);
+      setError(undefined);
+      appendLocalNotice(`Mode switched to ${nextMode}.`);
+      await persistSession();
+      void writeDebugLog(process.cwd(), config.debug, "mode.switch", { mode: nextMode });
+      return;
+    }
+
+    if (value === "/mode") {
+      setError(undefined);
+      appendLocalNotice(`Current mode: ${session.getTaskMode()}.`);
+      void writeDebugLog(process.cwd(), config.debug, "mode.report", { mode: session.getTaskMode() });
+      return;
+    }
+
+    if (value === "/checkpoint" || value.startsWith("/checkpoint ")) {
+      await handleCheckpointCommand(value.slice("/checkpoint".length).trim());
       return;
     }
 
@@ -217,11 +252,50 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
     }
   }
 
+  async function handleCheckpointCommand(command: string): Promise<void> {
+    setError(undefined);
+
+    try {
+      if (command === "list" || command.length === 0) {
+        const checkpoints = await listCheckpoints(process.cwd());
+        appendLocalNotice(
+          checkpoints.length === 0
+            ? "No checkpoints yet."
+            : checkpoints
+              .map((checkpoint) => `${checkpoint.id}${checkpoint.name ? ` (${checkpoint.name})` : ""}: ${checkpoint.files.length} files`)
+              .join("\n")
+        );
+        return;
+      }
+
+      if (command === "create" || command.startsWith("create ")) {
+        const name = command.slice("create".length).trim() || undefined;
+        const checkpoint = await createCheckpoint(process.cwd(), name);
+        appendLocalNotice(`Checkpoint created: ${checkpoint.id} (${checkpoint.files.length} files).`);
+        return;
+      }
+
+      if (command === "restore" || command.startsWith("restore ")) {
+        const id = command.slice("restore".length).trim() || undefined;
+        const result = await restoreCheckpoint(process.cwd(), id);
+        appendLocalNotice(`Checkpoint restored: ${result.id} (${result.restoredFiles.length} restored, ${result.removedFiles.length} removed).`);
+        return;
+      }
+
+      setError("Usage: /checkpoint create [name], /checkpoint list, or /checkpoint restore [id].");
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Checkpoint command failed.";
+      setError(message);
+      void writeDebugLog(process.cwd(), config.debug, "checkpoint.command_failed", { command, message });
+    }
+  }
+
   async function submitChat(value: string, options: { retry: boolean }): Promise<void> {
     setBusy(true);
     setError(undefined);
     setUsage(undefined);
     setContextMetadata(undefined);
+    setVerificationStatus({ state: "not_run" });
     setExpandedToolEventIds([]);
     setLastSubmittedValue(value);
     void writeDebugLog(process.cwd(), config.debug, options.retry ? "chat.retry" : "chat.submit", { value });
@@ -285,6 +359,7 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
       setMessages([...session.listMessages()]);
       setUsage(result.usage);
       setContextMetadata(result.context);
+      setVerificationStatus(result.verification ?? { state: "not_run" });
       void writeDebugLog(process.cwd(), config.debug, "chat.complete", {
         usage: result.usage,
         context: result.context
@@ -308,6 +383,18 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
 
   async function refreshDebugEntries(): Promise<void> {
     setDebugEntries(await readDebugLogTail(process.cwd(), 10));
+  }
+
+  function appendLocalNotice(content: string): void {
+    setMessages((current) => [
+      ...current,
+      {
+        id: `notice_${Date.now().toString(36)}`,
+        role: "assistant",
+        content,
+        createdAt: new Date().toISOString()
+      }
+    ]);
   }
 
   async function persistSession(): Promise<void> {
@@ -353,9 +440,11 @@ export function App({ config, contextBuilder, provider, imageProvider, registry,
         error={error}
         usage={usage}
         contextMetadata={contextMetadata}
+        verification={verificationStatus}
         debug={Boolean(config.debug)}
         providerStatus={status}
         cwd={process.cwd()}
+        taskMode={taskMode}
         theme={theme}
       />
     </Box>

@@ -21,7 +21,10 @@ export class ToolRegistry {
     return [...this.tools.values()];
   }
 
-  toChatCompletionTools(): ChatCompletionTool[] {
-    return this.list().map((tool) => toChatCompletionTool(tool));
+  toChatCompletionTools(options: { includeActive?: boolean } = {}): ChatCompletionTool[] {
+    const includeActive = options.includeActive ?? true;
+    return this.list()
+      .filter((tool) => includeActive || tool.permission !== "active")
+      .map((tool) => toChatCompletionTool(tool));
   }
 }

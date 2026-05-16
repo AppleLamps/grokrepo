@@ -7,6 +7,7 @@ import { SYSTEM_PROMPT } from "../prompts/system.js";
 import type { ToolCallRequest } from "../tools/types.js";
 
 export type SessionRole = "system" | "user" | "assistant" | "tool";
+export type TaskMode = "plan" | "act";
 
 export interface SessionMessage {
   id: string;
@@ -30,6 +31,7 @@ export interface ConversationSummary {
 
 export interface SerializedSession {
   id: string;
+  taskMode?: TaskMode;
   messages: SessionMessage[];
   summary?: ConversationSummary;
   createdAt: string;
@@ -43,11 +45,13 @@ export class Session {
   private readonly messages: SessionMessage[];
   private summary?: ConversationSummary;
   private currentTurnId?: string;
+  private taskMode: TaskMode;
 
   constructor(seed?: SerializedSession) {
     this.id = seed?.id ?? createId("session");
     this.createdAt = seed?.createdAt ?? new Date().toISOString();
     this.updatedAt = seed?.updatedAt ?? this.createdAt;
+    this.taskMode = normalizeTaskMode(seed?.taskMode);
     this.messages = seed?.messages ? normalizeSeedMessages(seed.messages) : [
       {
         id: createId("message"),
@@ -86,6 +90,15 @@ export class Session {
     this.updatedAt = summary.updatedAt;
   }
 
+  getTaskMode(): TaskMode {
+    return this.taskMode;
+  }
+
+  setTaskMode(mode: TaskMode): void {
+    this.taskMode = mode;
+    this.updatedAt = new Date().toISOString();
+  }
+
   activeMessages(): readonly SessionMessage[] {
     const coveredIds = new Set(this.summary?.coveredMessageIds ?? []);
     return this.messages.filter((message) => message.role === "system" || !coveredIds.has(message.id));
@@ -120,6 +133,7 @@ export class Session {
 
     const insertedSystemMessages = [
       contextPrompt,
+      renderTaskModePrompt(this.taskMode),
       this.summary ? renderConversationSummaryPrompt(this.summary) : undefined
     ].filter((prompt): prompt is string => Boolean(prompt));
 
@@ -147,6 +161,7 @@ export class Session {
   serialize(): SerializedSession {
     return {
       id: this.id,
+      taskMode: this.taskMode,
       messages: [...this.messages],
       ...(this.summary ? { summary: this.summary } : {}),
       createdAt: this.createdAt,
@@ -192,6 +207,22 @@ export class Session {
   }
 }
 
+function renderTaskModePrompt(mode: TaskMode): string {
+  if (mode === "plan") {
+    return [
+      "<task_mode>",
+      "mode: plan",
+      "Rules: inspect, reason, and produce plans only. Do not request active or mutating tools. Passive tools are allowed for evidence gathering."
+    ].join("\n");
+  }
+
+  return [
+    "<task_mode>",
+    "mode: act",
+    "Rules: implementation is allowed when the user asks for it. Active tools still require explicit user approval before execution."
+  ].join("\n");
+}
+
 function renderConversationSummaryPrompt(summary: ConversationSummary): string {
   return [
     "<conversation_summary>",
@@ -201,6 +232,10 @@ function renderConversationSummaryPrompt(summary: ConversationSummary): string {
     `coveredMessageIds: ${summary.coveredMessageIds.join(", ")}`,
     summary.text
   ].join("\n");
+}
+
+function normalizeTaskMode(mode: TaskMode | undefined): TaskMode {
+  return mode === "plan" || mode === "act" ? mode : "act";
 }
 
 function normalizeSeedMessages(messages: SessionMessage[]): SessionMessage[] {

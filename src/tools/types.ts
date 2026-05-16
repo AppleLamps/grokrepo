@@ -41,6 +41,7 @@ export interface ImageProviderLike {
 export interface ToolApprovalDecision {
   approved: boolean;
   approvedFiles?: string[];
+  strongConfirmation?: boolean;
 }
 
 export interface ToolExecutionError {

@@ -169,6 +169,61 @@ test("compactToolSummary covers core tool result branches", () => {
     ],
     [
       {
+        id: "file_info",
+        tool: "file_info",
+        permission: "passive",
+        status: "completed",
+        args: { path: "src/a.ts" },
+        result: { ok: true, tool: "file_info", output: { path: "src/a.ts", type: "file", size: 12 } }
+      },
+      "src/a.ts file (12 bytes)"
+    ],
+    [
+      {
+        id: "mkdir",
+        tool: "create_directory",
+        permission: "active",
+        status: "completed",
+        args: { path: "src/new" },
+        result: { ok: true, tool: "create_directory", output: { path: "src/new" } }
+      },
+      "src/new"
+    ],
+    [
+      {
+        id: "copy",
+        tool: "copy_file",
+        permission: "active",
+        status: "completed",
+        args: { source: "a.txt", destination: "b.txt" },
+        result: { ok: true, tool: "copy_file", output: { source: "a.txt", destination: "b.txt" } }
+      },
+      "a.txt -> b.txt"
+    ],
+    [
+      {
+        id: "move",
+        tool: "move_file",
+        permission: "active",
+        status: "completed",
+        args: { source: "b.txt", destination: "c.txt" },
+        result: { ok: true, tool: "move_file", output: { source: "b.txt", destination: "c.txt" } }
+      },
+      "b.txt -> c.txt"
+    ],
+    [
+      {
+        id: "delete",
+        tool: "delete_file",
+        permission: "active",
+        status: "completed",
+        args: { path: "c.txt" },
+        result: { ok: true, tool: "delete_file", output: { originalPath: "c.txt", trashPath: ".workspace/trash/trash_1/files/c.txt" } }
+      },
+      "c.txt -> .workspace/trash/trash_1/files/c.txt"
+    ],
+    [
+      {
         id: "list",
         tool: "list_files",
         permission: "passive",
@@ -177,6 +232,50 @@ test("compactToolSummary covers core tool result branches", () => {
         result: { ok: true, tool: "list_files", output: { path: "src", entries: [{ name: "a.ts" }] } }
       },
       "src, 1 entries"
+    ],
+    [
+      {
+        id: "range",
+        tool: "read_file_range",
+        permission: "passive",
+        status: "completed",
+        args: { path: "src/a.ts", startLine: 3, endLine: 8 },
+        result: { ok: true, tool: "read_file_range", output: { path: "src/a.ts", startLine: 3, endLine: 8 } }
+      },
+      "src/a.ts:3-8"
+    ],
+    [
+      {
+        id: "tree",
+        tool: "list_tree",
+        permission: "passive",
+        status: "completed",
+        args: { path: "." },
+        result: { ok: true, tool: "list_tree", output: { path: ".", entries: [{ path: "src" }, { path: "README.md" }] } }
+      },
+      "., 2 entries"
+    ],
+    [
+      {
+        id: "definitions",
+        tool: "list_code_definitions",
+        permission: "passive",
+        status: "completed",
+        args: { path: "src" },
+        result: { ok: true, tool: "list_code_definitions", output: { path: "src", definitions: [{ name: "App" }] } }
+      },
+      "src, 1 definitions"
+    ],
+    [
+      {
+        id: "references",
+        tool: "find_references",
+        permission: "passive",
+        status: "completed",
+        args: { query: "App" },
+        result: { ok: true, tool: "find_references", output: { query: "App", matches: [{ path: "src/app.tsx" }] } }
+      },
+      "App, 1 matches"
     ],
     [
       {
@@ -191,10 +290,91 @@ test("compactToolSummary covers core tool result branches", () => {
     ],
     [{ id: "status", tool: "git_status", permission: "passive", status: "completed" }, "working tree status"],
     [{ id: "diff", tool: "git_diff", permission: "passive", status: "completed" }, "working tree diff"],
+    [
+      {
+        id: "project",
+        tool: "analyze_project_structure",
+        permission: "passive",
+        status: "completed",
+        result: { ok: true, tool: "analyze_project_structure", output: { frameworks: ["TypeScript"], modules: [{ path: "src" }], tests: ["test/a.test.ts"] } }
+      },
+      "1 frameworks, 1 modules, 1 tests"
+    ],
+    [{ id: "log", tool: "git_log", permission: "passive", status: "completed", result: { ok: true, tool: "git_log", output: { commits: [{ hash: "a" }] } } }, "1 commit"],
+    [
+      {
+        id: "branch",
+        tool: "git_branch",
+        permission: "passive",
+        status: "completed",
+        result: { ok: true, tool: "git_branch", output: { current: "main", branches: ["main", "feature"] } }
+      },
+      "main, 2 branches"
+    ],
+    [{ id: "show", tool: "git_show", permission: "passive", status: "completed", args: { ref: "HEAD", path: "src/a.ts" } }, "HEAD:src/a.ts"],
+    [{ id: "diff_file", tool: "git_diff_file", permission: "passive", status: "completed", args: { path: "src/a.ts", staged: true } }, "src/a.ts staged"],
+    [
+      {
+        id: "stage",
+        tool: "git_stage",
+        permission: "active",
+        status: "completed",
+        args: { paths: ["src/a.ts"] },
+        result: { ok: true, tool: "git_stage", output: { stagedPaths: ["src/a.ts"] } }
+      },
+      "1 staged path"
+    ],
+    [
+      {
+        id: "restore",
+        tool: "git_restore",
+        permission: "active",
+        status: "completed",
+        args: { paths: ["src/a.ts"] },
+        result: { ok: true, tool: "git_restore", output: { paths: ["src/a.ts"], staged: false } }
+      },
+      "1 restored path"
+    ],
     [{ id: "commit", tool: "git_commit", permission: "active", status: "completed", args: { message: "save work" } }, "save work"],
     [{ id: "shell", tool: "run_shell", permission: "active", status: "completed", args: { command: "npm test" } }, "npm test"],
     [{ id: "patch", tool: "apply_patch", permission: "active", status: "completed", args: { summary: "fix parser" } }, "fix parser"],
     [{ id: "undo", tool: "undo_patch", permission: "active", status: "completed" }, "latest backup"],
+    [
+      {
+        id: "checkpoint_create",
+        tool: "checkpoint_create",
+        permission: "active",
+        status: "completed",
+        args: { name: "before edits" },
+        result: { ok: true, tool: "checkpoint_create", output: { id: "checkpoint_1", name: "before edits", fileCount: 3 } }
+      },
+      "checkpoint_1 before edits, 3 files"
+    ],
+    [
+      {
+        id: "checkpoint_list",
+        tool: "checkpoint_list",
+        permission: "passive",
+        status: "completed",
+        result: { ok: true, tool: "checkpoint_list", output: { checkpoints: [{ id: "checkpoint_1" }] } }
+      },
+      "1 checkpoint"
+    ],
+    [
+      {
+        id: "checkpoint_restore",
+        tool: "checkpoint_restore",
+        permission: "active",
+        status: "completed",
+        args: { id: "checkpoint_1" },
+        result: {
+          ok: true,
+          tool: "checkpoint_restore",
+          output: { id: "checkpoint_1", restoredFiles: ["a.ts", "b.ts"], removedFiles: ["new.ts"] }
+        }
+      },
+      "checkpoint_1, 2 restored, 1 removed"
+    ],
     [
       {
         id: "web",
@@ -271,6 +451,32 @@ test("approval panel model shows patch selected file count", () => {
   assert.equal(model.title, "APPROVAL apply_patch");
   assert.equal(model.fileSummary, "1/2 files selected");
   assert.match(model.controls, /toggle files/);
+});
+
+test("approval panel model displays high-risk shell controls", () => {
+  const model = approvalPanelModel({
+    call: { id: "shell_1", name: "run_shell", arguments: "{}", parsedArguments: {} },
+    tool: {
+      name: "run_shell",
+      description: "shell",
+      permission: "active",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      async execute() {
+        return { ok: true, tool: "run_shell", output: {} };
+      }
+    },
+    kind: "standard",
+    preview: "rm -rf dist",
+    risk: {
+      level: "destructive",
+      reason: "Deletes files.",
+      requiresStrongConfirmation: true
+    }
+  });
+
+  assert.match(model.preview, /risk: destructive - Deletes files\./);
+  assert.match(model.controls, /!/);
+  assert.doesNotMatch(model.controls, /y allow/);
 });
 
 test("status bar displays busy, usage, context, and error states", () => {
@@ -366,6 +572,20 @@ test("status bar emits quiet model and workspace metadata without session label"
   assert.equal(parts.includes("grokcode"), true);
 });
 
+test("status bar includes current task mode", () => {
+  assert.deepEqual(statusBarParts({ busy: false, taskMode: "plan" }), ["mode plan", "idle"]);
+  assert.deepEqual(statusBarParts({ busy: false, taskMode: "act" }), ["mode act", "idle"]);
+});
+
+test("status bar includes verification status when available", () => {
+  assert.deepEqual(statusBarParts({ busy: false, verification: { state: "passed", commandCount: 2 } }), ["verify passed 2 cmds", "idle"]);
+  assert.deepEqual(
+    statusBarParts({ busy: false, verification: { state: "failed", command: "npm test", summary: "failed" } }),
+    ["verify failed npm test", "idle"]
+  );
+  assert.deepEqual(statusBarParts({ busy: false, verification: { state: "not_run" } }), ["idle"]);
+});
+
 test("status bar model splits left metadata from right state", () => {
   const model = statusBarModel(
     {
@@ -391,6 +611,10 @@ test("help panel model lists terminal commands", () => {
   assert.equal(model.title, "HELP commands");
   assert.equal(model.lines.some((line) => line.includes("/help")), true);
   assert.equal(model.lines.some((line) => line.includes("/retry")), true);
+  assert.equal(model.lines.some((line) => line.includes("/plan")), true);
+  assert.equal(model.lines.some((line) => line.includes("/act")), true);
+  assert.equal(model.lines.some((line) => line.includes("/mode")), true);
+  assert.equal(model.lines.some((line) => line.includes("/checkpoint")), true);
   assert.equal(model.lines.some((line) => line.includes("Tab")), true);
 });
 

@@ -9,6 +9,8 @@ import {
   type SummarizationOptions,
   summarizeSessionIfNeeded
 } from "./summarization.js";
+import { runFileCommand } from "../tools/process.js";
+import { classifyShellCommand, type ShellRisk } from "../tools/shell-risk.js";
 import { parseToolArguments } from "../tools/args.js";
 import type {
   ParsedToolCallRequest,
@@ -25,7 +27,13 @@ export interface ChatTurnResult {
   content: string;
   usage?: GrokUsage;
   context?: ContextRuntimeMetadata;
+  verification?: VerificationRuntimeStatus;
 }
+
+export type VerificationRuntimeStatus =
+  | { state: "not_run" }
+  | { state: "passed"; commandCount: number; elapsedMs?: number }
+  | { state: "failed"; command: string; summary: string; elapsedMs?: number };
 
 export type ToolEventStatus = "requested" | "approval_requested" | "approved" | "denied" | "running" | "completed";
 
@@ -43,6 +51,7 @@ export interface ToolApprovalRequest {
   tool: Tool;
   preview: string;
   kind: "standard" | "patch";
+  risk?: ShellRisk;
   files?: string[];
   diff?: string;
   summary?: string;
@@ -67,6 +76,7 @@ export interface RunChatTurnOptions {
 export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurnResult> {
   const maxToolRounds = options.maxToolRounds ?? 6;
   let usage: GrokUsage | undefined;
+  let verification: VerificationRuntimeStatus = { state: "not_run" };
   const turnContext = await buildTurnContext(options);
   const summaryMetadata = await summarizeSessionIfNeeded(
     options.session,
@@ -96,7 +106,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
 
     for await (const event of options.provider.streamChat(
       options.session.toChatMessages(turnContext?.prompt),
-      options.registry.toChatCompletionTools()
+      options.registry.toChatCompletionTools({ includeActive: options.session.getTaskMode() !== "plan" })
     )) {
       if (event.type === "content" && event.content) {
         content += event.content;
@@ -118,7 +128,8 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
       return {
         content,
         usage,
-        context: contextMetadata
+        context: contextMetadata,
+        verification
       };
     }
 
@@ -127,6 +138,7 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
 
     for (const toolCall of toolCalls) {
       const result = await executeToolCall(toolCall, options);
+      verification = updateVerificationStatus(verification, toolCall.name, result);
       options.session.addToolMessage(toolCall.id, JSON.stringify(result));
       await notifySessionChange(options);
     }
@@ -140,7 +152,8 @@ export async function runChatTurn(options: RunChatTurnOptions): Promise<ChatTurn
   return {
     content,
     usage,
-    context: contextMetadata
+    context: contextMetadata,
+    verification
   };
 }
 
@@ -212,7 +225,21 @@ async function executeToolCall(
 
   let approval: ToolApprovalDecision | undefined;
 
+  if (options.session.getTaskMode() === "plan" && tool.permission === "active") {
+    const result = toolFailure(tool.name, "plan_mode_blocked", "Plan mode blocks active tool execution. Switch to /act to approve implementation tools.");
+    options.onToolEvent?.({
+      id: call.id,
+      tool: tool.name,
+      permission: tool.permission,
+      status: "denied",
+      args: parsed.value,
+      result
+    });
+    return result;
+  }
+
   if (tool.permission === "active") {
+    const approvalRequest = await createApprovalRequest(parsedCall, tool, parsed.value, options.cwd);
     options.onToolEvent?.({
       id: call.id,
       tool: tool.name,
@@ -221,12 +248,23 @@ async function executeToolCall(
       args: parsed.value
     });
 
-    approval = normalizeApprovalDecision(
-      await options.requestApproval(createApprovalRequest(parsedCall, tool, parsed.value))
-    );
+    approval = normalizeApprovalDecision(await options.requestApproval(approvalRequest));
 
     if (!approval.approved) {
       const result = toolFailure(tool.name, "approval_denied", "User denied tool execution.");
+      options.onToolEvent?.({
+        id: call.id,
+        tool: tool.name,
+        permission: tool.permission,
+        status: "denied",
+        args: parsed.value,
+        result
+      });
+      return result;
+    }
+
+    if (approvalRequest.risk?.requiresStrongConfirmation && !approval.strongConfirmation) {
+      const result = toolFailure(tool.name, "strong_confirmation_required", "This shell command requires strong confirmation with !.");
       options.onToolEvent?.({
         id: call.id,
         tool: tool.name,
@@ -274,7 +312,7 @@ async function executeToolCall(
   return result;
 }
 
-function createApprovalRequest(call: ParsedToolCallRequest, tool: Tool, args: unknown): ToolApprovalRequest {
+async function createApprovalRequest(call: ParsedToolCallRequest, tool: Tool, args: unknown, cwd: string): Promise<ToolApprovalRequest> {
   if (tool.name === "apply_patch") {
     const patchPreview = createPatchPreview(args);
 
@@ -291,12 +329,61 @@ function createApprovalRequest(call: ParsedToolCallRequest, tool: Tool, args: un
     }
   }
 
+  if (tool.name === "git_restore") {
+    return createGitRestoreApprovalRequest(call, tool, args, cwd);
+  }
+
+  const risk = shellRiskForApproval(tool.name, args);
+
   return {
     call,
     tool,
     kind: "standard",
-    preview: createApprovalPreview(tool.name, args)
+    preview: createApprovalPreview(tool.name, args),
+    ...(risk ? { risk } : {})
   };
+}
+
+async function createGitRestoreApprovalRequest(
+  call: ParsedToolCallRequest,
+  tool: Tool,
+  args: unknown,
+  cwd: string
+): Promise<ToolApprovalRequest> {
+  const record = typeof args === "object" && args !== null ? args as Record<string, unknown> : {};
+  const rawPaths = record.paths;
+  const paths = Array.isArray(rawPaths)
+    ? rawPaths.filter((value): value is string => typeof value === "string")
+    : [];
+  const staged = record.staged === true;
+  const source = typeof record.source === "string"
+    ? record.source
+    : "HEAD";
+  const diffArgs = staged
+    ? ["diff", "--staged", "--", ...paths]
+    : ["diff", "--", ...paths];
+  const diff = paths.length > 0 ? await runFileCommand("git", diffArgs, { cwd, timeoutMs: 10_000 }) : undefined;
+  const mode = staged ? "unstage index entries" : `restore worktree from ${source}`;
+
+  return {
+    call,
+    tool,
+    kind: "standard",
+    preview: [
+      `Mode: ${mode}`,
+      `Paths: ${paths.length > 0 ? paths.join(", ") : "(none)"}`,
+      diff?.stdout.trim() ? `\n${diff.stdout.trimEnd()}` : "\n(no diff preview)"
+    ].join("\n")
+  };
+}
+
+function shellRiskForApproval(toolName: string, args: unknown): ShellRisk | undefined {
+  if (toolName !== "run_shell" || typeof args !== "object" || args === null) {
+    return undefined;
+  }
+
+  const command = (args as Record<string, unknown>).command;
+  return typeof command === "string" ? classifyShellCommand(command) : undefined;
 }
 
 function createApprovalPreview(toolName: string, args: unknown): string {
@@ -315,8 +402,34 @@ function createApprovalPreview(toolName: string, args: unknown): string {
     return `${record.path} (${Buffer.byteLength(content, "utf8")} bytes)`;
   }
 
+  if (toolName === "create_directory" && typeof record.path === "string") {
+    return `Create directory: ${record.path}`;
+  }
+
+  if (toolName === "copy_file" && typeof record.source === "string" && typeof record.destination === "string") {
+    return `Copy ${record.source} -> ${record.destination}${record.overwrite === true ? " (overwrite allowed)" : ""}`;
+  }
+
+  if (toolName === "move_file" && typeof record.source === "string" && typeof record.destination === "string") {
+    return `Move ${record.source} -> ${record.destination}${record.overwrite === true ? " (overwrite allowed)" : ""}`;
+  }
+
+  if (toolName === "delete_file" && typeof record.path === "string") {
+    return `Soft-delete ${record.path} into .workspace/trash`;
+  }
+
   if (toolName === "git_commit" && typeof record.message === "string") {
     return record.message;
+  }
+
+  if (toolName === "verify_changes") {
+    const commands = Array.isArray(record.commands)
+      ? record.commands.filter((command): command is string => typeof command === "string")
+      : [];
+    const reason = typeof record.reason === "string" ? `${record.reason}\n` : "";
+    return commands.length > 0
+      ? `${reason}${commands.join("\n")}`
+      : `${reason}Run detected verification commands.`;
   }
 
   if (toolName === "image_generate" && typeof record.prompt === "string") {
@@ -356,4 +469,43 @@ function normalizeApprovalDecision(decision: boolean | ToolApprovalDecision): To
   }
 
   return decision;
+}
+
+function updateVerificationStatus(
+  current: VerificationRuntimeStatus,
+  toolName: string,
+  result: ToolExecutionResult
+): VerificationRuntimeStatus {
+  if (toolName !== "verify_changes") {
+    return current;
+  }
+
+  const output = isRecord(result.output) ? result.output : {};
+  const metadata = isRecord(result.metadata) ? result.metadata : {};
+  const source = result.ok ? output : metadata;
+  const elapsedMs = typeof source.elapsedMs === "number" ? source.elapsedMs : undefined;
+
+  if (result.ok) {
+    const commandCount = Array.isArray(source.commands) ? source.commands.length : 0;
+    return {
+      state: "passed",
+      commandCount,
+      ...(elapsedMs !== undefined ? { elapsedMs } : {})
+    };
+  }
+
+  if (result.error?.code === "verification_failed") {
+    return {
+      state: "failed",
+      command: typeof source.failedCommand === "string" ? source.failedCommand : "verification",
+      summary: typeof source.failureSummary === "string" ? source.failureSummary : result.error.message,
+      ...(elapsedMs !== undefined ? { elapsedMs } : {})
+    };
+  }
+
+  return current;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

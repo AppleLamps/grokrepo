@@ -68,6 +68,12 @@ Inside the terminal UI:
 - `/exit` or `/quit`: close the app.
 - `/help`: show or hide command help.
 - `/retry`: retry the last submitted prompt.
+- `/plan`: switch to read-only planning mode.
+- `/act`: switch to implementation mode.
+- `/mode`: report the current task mode.
+- `/checkpoint create [name]`: create a task checkpoint.
+- `/checkpoint list`: list saved task checkpoints.
+- `/checkpoint restore [id]`: restore a task checkpoint.
 - `/debug`: show or hide recent debug log entries.
 - `/clip [prompt]`: capture the current Windows clipboard image, save it, and ask GrokCode to analyze it.
 - `Tab`: expand or collapse the latest search result details. This global shortcut is reserved for search detail toggling.
@@ -77,6 +83,28 @@ Inside the terminal UI:
 - `Ctrl+U`: clear before the cursor.
 - `Ctrl+K`: clear after the cursor.
 - `Ctrl+W`: delete the previous word.
+
+## One-Shot Mode
+
+Run a single non-interactive prompt by passing it as arguments:
+
+```bash
+grokcode "explain this repo"
+grokcode --print "summarize the current git diff"
+grokcode --json "list likely test commands"
+grokcode --yes-safe "run the test suite and summarize failures"
+```
+
+Headless mode allows passive tools automatically. Active tools are denied by default. `--yes-safe` only approves safe verification-style active commands, such as `verify_changes` or safe test/typecheck/lint/build shell commands.
+
+`--json` includes assistant content, exit code, usage, context metadata, verification status, and tool events.
+
+Exit codes:
+
+- `0`: success
+- `1`: startup or runtime error
+- `2`: active tool denied or blocked
+- `3`: verification failed
 
 ## Verification
 
@@ -124,19 +152,40 @@ Tools are registered in `src/tools/index.ts` and exposed to the model through Op
 Passive tools can run automatically:
 
 - `read_file`
+- `file_info`
+- `read_file_range`
 - `list_files`
+- `list_tree`
 - `grep`
+- `list_code_definitions`
+- `find_references`
+- `analyze_project_structure`
 - `git_status`
 - `git_diff`
+- `git_log`
+- `git_branch`
+- `git_show`
+- `git_diff_file`
 - `web_search`
 - `x_search`
 - `image_understand`
+- `detect_verification_commands`
+- `checkpoint_list`
 
 Active tools require explicit approval:
 
 - `write_file`
+- `create_directory`
+- `copy_file`
+- `move_file`
+- `delete_file`
 - `run_shell`
+- `verify_changes`
+- `checkpoint_create`
+- `checkpoint_restore`
 - `git_commit`
+- `git_stage`
+- `git_restore`
 - `apply_patch`
 - `undo_patch`
 - `image_generate`

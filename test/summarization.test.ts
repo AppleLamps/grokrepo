@@ -166,8 +166,10 @@ test("toChatMessages prepends context when restored session has no system messag
 
   assert.equal(messages[0]?.role, "system");
   assert.equal(messages[0]?.content, "repo context");
-  assert.equal(messages[1]?.role, "user");
-  assert.equal(messages[1]?.content, "hello");
+  assert.equal(messages[1]?.role, "system");
+  assert.match(String(messages[1]?.content), /mode: act/);
+  assert.equal(messages[2]?.role, "user");
+  assert.equal(messages[2]?.content, "hello");
 });
 
 test("restored sessions without turn ids are grouped by user boundaries", () => {

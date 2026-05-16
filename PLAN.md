@@ -14,13 +14,15 @@ Current status:
 - [x] Phase 6 Context Engine
 - [x] Phase 7 UX Polish
 - [~] Phase 8 Packaging
+- [~] Phase 9 Agent Product Maturity
 
 Verification status:
-- Latest verified build: `npm run build` passed.
-- Latest verified tests: `npm test` passed with 134 tests.
+- Latest verified build: Windows Node `tsc -p tsconfig.json --noEmit` passed.
+- Latest verified tests: Windows Node test runner passed with 142 tests.
 - Latest local implementation includes Phase 1 through Phase 7, Phase 8 packaging work, system prompt polish, tool documentation, and test hardening.
 - Test hardening added focused coverage for filesystem tools, patch editing edge cases, session persistence, session restore fallback, path safety, tool lifecycle events, debug logs, UI summaries, and git-aware context scanning.
 - Phase 8 packaging metadata, docs, demo guide, and dry-run packaging are present locally and pass. npm publishing is still pending.
+- Phase 9 foundation now includes Plan/Act mode, shell risk classification, stronger high-risk shell approval, and first-class verification command detection/execution. Remaining Phase 9 work includes richer code navigation, task checkpoints, headless one-shot usage, and expanded Git workflows.
 
 ---
 
@@ -465,6 +467,205 @@ Deliver:
 1. Decide whether to publish `grokcode@1.0.0` to npm now or keep it as a local package candidate.
 2. Add screenshots or a short demo video if needed before publishing.
 3. Publish to npm when ready.
+4. Continue Phase 9 with richer code navigation, task checkpoints, headless one-shot mode, and expanded Git workflows.
+
+---
+
+# Phase 9 — Agent Product Maturity [~]
+
+Goal:
+Close the biggest gaps between GrokCode's current MVP and a mature CLI coding-agent experience while preserving the project's reliability, transparency, and user-controlled execution model.
+
+Deliverables:
+- [x] structured Plan/Act task workflow
+- [x] shell command risk classification and safer approval UX
+- [x] first-class build/test/typecheck verification workflow
+- [x] richer code navigation and repository intelligence tools
+- [x] task-level checkpoints and rollback
+- [x] one-shot/headless CLI mode
+- [x] expanded Git workflow tools
+
+Tasks:
+
+## Add Plan/Act Task Mode
+
+Rationale:
+The current chat loop can inspect, edit, and verify, but it does not have a first-class separation between planning and implementation. A Plan/Act mode makes larger tasks safer and more predictable.
+
+Requirements:
+- [x] add explicit task modes, such as `plan`, `act`, and possibly `auto`
+- [x] expose mode controls in the terminal UI, for example `/plan` and `/act`
+- [x] ensure Plan mode can inspect context but avoids mutating tools
+- [x] require user confirmation before switching from a plan to implementation
+- [x] preserve mode state in the workspace session
+- [x] update the system prompt so the model follows mode-specific rules
+
+---
+
+## Add Shell Risk Classification
+
+Rationale:
+`run_shell` already requires approval, but mature CLI coders benefit from differentiating safe inspection commands from risky mutation, destructive, network, install, or publish commands.
+
+Risk classes:
+- [x] `safe`: read-only inspection, such as `git status`, `npm test`, `ls`, `cat`, or `rg`
+- [x] `mutating`: writes local files or changes project state
+- [x] `destructive`: deletes files, resets history, cleans directories, or force-overwrites data
+- [x] `network`: downloads, uploads, installs packages, or calls remote services
+- [x] `publish`: releases packages, pushes branches, deploys, or publishes artifacts
+
+Requirements:
+- [x] classify shell commands before approval
+- [x] show risk level and reason in the approval UI
+- [x] require stronger confirmation for destructive and publish commands
+- [ ] consider auto-approval settings only for explicitly safe commands
+- [ ] add command timeouts and clearer cancellation behavior
+- [x] test common risky patterns such as `rm -rf`, `git reset --hard`, `npm publish`, `curl | sh`, and package installs
+
+---
+
+## Add First-Class Verification Workflow
+
+Rationale:
+GrokCode can run commands, but verification should become a coherent workflow after code edits rather than an ad hoc shell call.
+
+Requirements:
+- [x] detect package manager and likely verification commands from project files
+- [x] identify relevant scripts such as `test`, `typecheck`, `lint`, and `build`
+- [ ] recommend verification commands after edits
+- [ ] optionally run approved verification commands automatically after patch application
+- [x] summarize failures with actionable next steps
+- [ ] iterate on failures when the user approves fixes
+- [x] include verification status in final task summaries
+
+Possible tool/workflow names:
+- [x] `detect_verification_commands`
+- [x] `verify_changes`
+- [ ] `summarize_test_failure`
+
+---
+
+## Add Richer Code Navigation Tools
+
+Rationale:
+The current context engine is lightweight and deterministic. It detects repo metadata, explicit files, recent files, and shallow source files, but it lacks deeper code intelligence for larger repositories.
+
+Candidate passive tools:
+- [x] `read_file_range`: read specific line ranges from large files
+- [x] `list_tree`: recursive or depth-limited tree view with ignore rules
+- [x] `list_code_definitions`: list top-level classes, functions, exports, and symbols
+- [x] `find_references`: locate call sites and symbol usages
+- [x] `analyze_project_structure`: summarize modules, entrypoints, tests, and dependencies
+
+Requirements:
+- [x] keep tools deterministic and local-first
+- [x] avoid vector database dependency for now
+- [x] prefer AST parsing where cheap and reliable, with text fallback where needed
+- [x] integrate output into the existing structured tool envelope
+- [x] add tests for TypeScript/JavaScript projects first
+
+---
+
+## Add Safer File Operation Tools
+
+Rationale:
+Some file operations can be done through shell today, but dedicated tools are safer, easier to preview, and easier to test.
+
+Candidate tools:
+- [x] `move_file`
+- [x] `delete_file`
+- [x] `create_directory`
+- [x] `copy_file`
+- [x] `file_info`
+
+Requirements:
+- [x] keep all operations workspace-confined
+- [x] require approval for mutating file operations
+- [x] show clear previews before delete, move, or overwrite
+- [x] create backups where practical
+- [x] support undo through the existing backup/checkpoint system
+
+---
+
+## Add Task-Level Checkpoints
+
+Rationale:
+Patch-level undo is useful, but longer tasks need named checkpoints that can restore the workspace to a known state across multiple edits.
+
+Requirements:
+- [x] create a checkpoint before a multi-step task starts
+- [x] list available checkpoints
+- [x] restore a named checkpoint
+- [x] associate changed files, patches, command results, and verification results with a task
+- [x] expose checkpoint controls in the UI or slash commands
+- [x] keep checkpoint data under `.workspace/`
+
+Candidate commands/tools:
+- [x] `/checkpoint create [name]`
+- [x] `/checkpoint list`
+- [x] `/checkpoint restore [id]`
+- [x] `checkpoint_create`
+- [x] `checkpoint_list`
+- [x] `checkpoint_restore`
+
+---
+
+## Add One-Shot And Headless CLI Mode
+
+Rationale:
+The current product is terminal-interactive. A mature CLI coder should also support automation, scripts, and CI-style use cases.
+
+Example usage:
+
+```bash
+grokcode "explain this repo"
+grokcode --print "summarize the current git diff"
+grokcode --json "list likely test commands"
+grokcode --yes-safe "run the test suite and summarize failures"
+```
+
+Requirements:
+- [x] accept a prompt as a CLI argument
+- [x] support non-interactive output with `--print`
+- [x] support structured JSON output with `--json`
+- [x] define approval behavior for headless mode
+- [x] allow safe passive tools without prompts
+- [x] never allow risky active tools in headless mode unless explicitly configured
+- [x] return useful process exit codes
+
+---
+
+## Expand Git Workflow Tools
+
+Rationale:
+GrokCode has `git_status`, `git_diff`, and approved `git_commit`. More Git workflow coverage would reduce reliance on raw shell commands.
+
+Candidate tools:
+- [x] `git_log`
+- [x] `git_branch`
+- [x] `git_stage`
+- [x] `git_restore`
+- [x] `git_show`
+- [x] `git_diff_file`
+
+Requirements:
+- [x] keep read-only Git tools passive
+- [x] require approval for staging, restoring, branch switching, or other mutating operations
+- [x] show clear previews for destructive Git operations
+- [x] integrate Git summaries into final task reports
+
+---
+
+## Optional Later: Provider And Plugin Extensibility
+
+Rationale:
+GrokCode is intentionally Grok-first and currently avoids MCP, autonomous agents, vector databases, and plugin complexity. That is appropriate for the MVP, but extensibility may matter later for power users.
+
+Possible future work:
+- [ ] support additional OpenAI-compatible providers
+- [ ] allow per-task model override
+- [ ] add local custom tool configuration
+- [ ] reconsider MCP only after core safety and workflow maturity are strong
 
 ---
 
