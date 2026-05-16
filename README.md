@@ -10,7 +10,8 @@ Current local build:
 
 - Phases 1 through 7 are complete.
 - Phase 8 packaging is implemented locally and still needs npm publish plus optional demo media.
-- Latest verified suite: `npm run build` passed and `npm test` passed with 134 tests.
+- Phase 9 agent maturity slices are implemented: Plan/Act mode, shell risk classification, verification tools, code navigation, task checkpoints, safer file operations, one-shot/headless mode, expanded Git workflows, and project structure analysis.
+- Latest verified suite: TypeScript `--noEmit` passed and the Windows Node test runner passed with 164 tests.
 
 ## Install
 
@@ -111,7 +112,7 @@ Exit codes:
 Run these before publishing or pushing major changes:
 
 ```bash
-npm run build
+npm run typecheck
 npm test
 npm run pack:dry-run
 ```
@@ -130,11 +131,17 @@ GrokCode currently includes:
 
 - streaming multi-turn chat
 - repository context scanning
+- project structure analysis
+- Plan/Act task mode
 - conversation summarization
 - workspace session persistence
 - filesystem inspection
-- Git inspection and approved commits
-- approved shell execution
+- safer workspace file operations
+- Git inspection, staging, restore, diff, log, show, and approved commits
+- approved shell execution with risk classification
+- verification command detection and approved verification runs
+- task checkpoints and restore
+- one-shot/headless prompt execution
 - patch-based editing with backups and undo
 - web search with citations
 - X search with citations
@@ -283,9 +290,11 @@ test/
   workflows.test.ts
 
 .workspace/
+  checkpoints/
   images/
   logs/
   patches/
+  sessions/
 ```
 
 ## Packaging

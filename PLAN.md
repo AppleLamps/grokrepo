@@ -18,11 +18,11 @@ Current status:
 
 Verification status:
 - Latest verified build: Windows Node `tsc -p tsconfig.json --noEmit` passed.
-- Latest verified tests: Windows Node test runner passed with 142 tests.
-- Latest local implementation includes Phase 1 through Phase 7, Phase 8 packaging work, system prompt polish, tool documentation, and test hardening.
+- Latest verified tests: Windows Node test runner passed with 164 tests.
+- Latest local implementation includes Phase 1 through Phase 7, Phase 8 packaging work, system prompt polish, tool documentation, test hardening, and the main Phase 9 agent maturity slices.
 - Test hardening added focused coverage for filesystem tools, patch editing edge cases, session persistence, session restore fallback, path safety, tool lifecycle events, debug logs, UI summaries, and git-aware context scanning.
 - Phase 8 packaging metadata, docs, demo guide, and dry-run packaging are present locally and pass. npm publishing is still pending.
-- Phase 9 foundation now includes Plan/Act mode, shell risk classification, stronger high-risk shell approval, and first-class verification command detection/execution. Remaining Phase 9 work includes richer code navigation, task checkpoints, headless one-shot usage, and expanded Git workflows.
+- Phase 9 now includes Plan/Act mode, shell risk classification, stronger high-risk shell approval, first-class verification command detection/execution, verification status tracking, richer code navigation, safer file operations, task checkpoints, one-shot/headless mode, expanded Git workflows, and project structure analysis.
 
 ---
 
@@ -467,7 +467,7 @@ Deliver:
 1. Decide whether to publish `grokcode@1.0.0` to npm now or keep it as a local package candidate.
 2. Add screenshots or a short demo video if needed before publishing.
 3. Publish to npm when ready.
-4. Continue Phase 9 with richer code navigation, task checkpoints, headless one-shot mode, and expanded Git workflows.
+4. Continue Phase 9 follow-ups: safe-command auto-approval settings, shell cancellation behavior, verification recommendations after edits, and deeper failure iteration workflows.
 
 ---
 
@@ -705,18 +705,24 @@ src/
 
   runtime/
     chat.ts
+    headless.ts
     session.ts
     session-store.ts
     summarization.ts
 
   tools/
+    checkpoints.ts
     editing.ts
+    file-ops.ts
     filesystem.ts
     git.ts
     images.ts
+    navigation.ts
     registry.ts
     search.ts
+    shell-risk.ts
     shell.ts
+    verification.ts
 
   prompts/
     system.ts
