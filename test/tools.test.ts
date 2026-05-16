@@ -100,6 +100,24 @@ test("read_file validates required arguments", async () => {
   assert.equal(result.error?.code, "invalid_arguments");
 });
 
+test("read_file caps large passive reads", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
+  await writeFile(path.join(cwd, "large.txt"), "x".repeat(210_000), "utf8");
+
+  const tool = createDefaultToolRegistry().get("read_file");
+  assert.ok(tool);
+
+  const result = await tool.execute({ path: "large.txt" }, { cwd });
+  const output = result.output as { content: string; truncated: boolean; bytesRead: number; maxBytes: number; size: number };
+
+  assert.equal(result.ok, true);
+  assert.equal(output.size, 210_000);
+  assert.equal(output.content.length, 200_000);
+  assert.equal(output.truncated, true);
+  assert.equal(output.bytesRead, 200_000);
+  assert.equal(output.maxBytes, 200_000);
+});
+
 test("list_files returns directory entries and metadata", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
   await mkdir(path.join(cwd, "src"), { recursive: true });
@@ -158,6 +176,31 @@ test("read_file_range returns selected line metadata", async () => {
       { line: 3, text: "three" }
     ]
   });
+});
+
+test("read_file_range streams large files instead of loading them whole", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "grokcode-tools-"));
+  const content = Array.from({ length: 25_000 }, (_value, index) => `line-${index + 1} ${"x".repeat(8)}`).join("\n");
+  await writeFile(path.join(cwd, "large.ts"), content, "utf8");
+  const tool = createDefaultToolRegistry().get("read_file_range");
+  assert.ok(tool);
+
+  const result = await tool.execute({ path: "large.ts", startLine: 20_000, endLine: 20_001 }, { cwd });
+  const output = result.output as {
+    content: string;
+    totalLines: number;
+    streamed: boolean;
+    lines: Array<{ line: number; text: string }>;
+  };
+
+  assert.equal(result.ok, true);
+  assert.equal(output.streamed, true);
+  assert.equal(output.totalLines, 25_000);
+  assert.equal(output.content, "line-20000 xxxxxxxx\nline-20001 xxxxxxxx");
+  assert.deepEqual(output.lines, [
+    { line: 20_000, text: "line-20000 xxxxxxxx" },
+    { line: 20_001, text: "line-20001 xxxxxxxx" }
+  ]);
 });
 
 test("list_tree returns depth-limited entries and ignores generated directories", async () => {

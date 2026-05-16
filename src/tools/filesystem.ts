@@ -1,10 +1,12 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getOptionalString, getString } from "./args.js";
 import { resolveWorkspacePath, toWorkspaceRelativePath } from "./path.js";
 import { runFileCommand } from "./process.js";
 import { toolFailure, toolSuccess, type Tool, type ToolExecutionContext, type ToolExecutionResult } from "./types.js";
+
+const MAX_READ_FILE_BYTES = 200_000;
 
 export function createFilesystemTools(): Tool[] {
   return [readFileTool, listFilesTool, grepTool, writeFileTool];
@@ -38,13 +40,24 @@ const readFileTool: Tool = {
     }
 
     try {
-      const content = await readFile(resolved.path, "utf8");
       const fileStat = await stat(resolved.path);
+      if (!fileStat.isFile()) {
+        return toolFailure("read_file", "not_file", `${requestedPath} is not a file.`);
+      }
+
+      const fileContent = await readUtf8Prefix(resolved.path, fileStat.size, MAX_READ_FILE_BYTES);
 
       return toolSuccess("read_file", {
         path: toWorkspaceRelativePath(context.cwd, resolved.path),
         size: fileStat.size,
-        content
+        content: fileContent.content,
+        ...(fileContent.truncated
+          ? {
+              truncated: true,
+              bytesRead: fileContent.bytesRead,
+              maxBytes: MAX_READ_FILE_BYTES
+            }
+          : {})
       });
     } catch (cause) {
       return toolFailure("read_file", "read_failed", errorMessage(cause));
@@ -186,6 +199,35 @@ const writeFileTool: Tool = {
     }
   }
 };
+
+async function readUtf8Prefix(
+  filePath: string,
+  fileSize: number,
+  maxBytes: number
+): Promise<{ content: string; truncated: boolean; bytesRead: number }> {
+  if (fileSize <= maxBytes) {
+    const content = await readFile(filePath, "utf8");
+    return {
+      content,
+      truncated: false,
+      bytesRead: Buffer.byteLength(content, "utf8")
+    };
+  }
+
+  const handle = await open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+
+    return {
+      content: buffer.subarray(0, bytesRead).toString("utf8"),
+      truncated: true,
+      bytesRead
+    };
+  } finally {
+    await handle.close();
+  }
+}
 
 async function runRipgrep(
   query: string,

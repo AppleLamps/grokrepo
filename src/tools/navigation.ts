@@ -1,5 +1,7 @@
+import { createReadStream } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { createInterface } from "node:readline";
 
 import { getOptionalString, getString, isRecord } from "./args.js";
 import { scanRepo } from "../context/scanner.js";
@@ -9,6 +11,7 @@ import { toolFailure, toolSuccess, type Tool, type ToolExecutionContext, type To
 
 const IGNORED_DIRECTORIES = new Set([".git", "node_modules", "dist", ".workspace"]);
 const CODE_EXTENSIONS = new Set([".cjs", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"]);
+const MAX_IN_MEMORY_RANGE_BYTES = 200_000;
 const TEXT_EXTENSIONS = new Set([
   ...CODE_EXTENSIONS,
   ".css",
@@ -62,9 +65,10 @@ const readFileRangeTool: Tool = {
         return toolFailure("read_file_range", "not_file", `${requestedPath} is not a file.`);
       }
 
-      const content = await readFile(resolved.path, "utf8");
-      const allLines = content.split(/\r?\n/);
-      const selected = allLines.slice(startLine - 1, endLine);
+      const range = fileStat.size <= MAX_IN_MEMORY_RANGE_BYTES
+        ? readLineRangeFromContent(await readFile(resolved.path, "utf8"), startLine, endLine)
+        : await readLineRangeFromStream(resolved.path, startLine, endLine);
+      const selected = range.selected;
       const lines = selected.map((text, index) => ({
         line: startLine + index,
         text
@@ -74,10 +78,15 @@ const readFileRangeTool: Tool = {
         path: toWorkspaceRelativePath(context.cwd, resolved.path),
         startLine,
         endLine: startLine + selected.length - 1,
-        totalLines: allLines.length,
+        totalLines: range.totalLines,
         truncated: requestedEndLine > endLine,
         content: selected.join("\n"),
-        lines
+        lines,
+        ...(fileStat.size > MAX_IN_MEMORY_RANGE_BYTES
+          ? {
+              streamed: true
+            }
+          : {})
       });
     } catch (cause) {
       return toolFailure("read_file_range", "read_failed", errorMessage(cause));
@@ -271,6 +280,51 @@ interface PackageJson {
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+}
+
+function readLineRangeFromContent(
+  content: string,
+  startLine: number,
+  endLine: number
+): { selected: string[]; totalLines: number } {
+  const allLines = content.split(/\r?\n/);
+
+  return {
+    selected: allLines.slice(startLine - 1, endLine),
+    totalLines: allLines.length
+  };
+}
+
+async function readLineRangeFromStream(
+  filePath: string,
+  startLine: number,
+  endLine: number
+): Promise<{ selected: string[]; totalLines: number }> {
+  const stream = createReadStream(filePath, { encoding: "utf8" });
+  const reader = createInterface({
+    input: stream,
+    crlfDelay: Infinity
+  });
+  const selected: string[] = [];
+  let totalLines = 0;
+
+  try {
+    for await (const line of reader) {
+      totalLines += 1;
+
+      if (totalLines >= startLine && totalLines <= endLine) {
+        selected.push(line);
+      }
+    }
+  } finally {
+    reader.close();
+    stream.destroy();
+  }
+
+  return {
+    selected,
+    totalLines
+  };
 }
 
 async function collectTreeEntries(
