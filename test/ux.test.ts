@@ -13,13 +13,15 @@ import {
   moveCursor,
   navigateHistory,
   removeAtCursor,
-  removeBeforeCursor
+  removeBeforeCursor,
+  slashCommandItems
 } from "../src/cli/composer.js";
 import { debugPanelModel } from "../src/cli/debug-panel.js";
 import { diffLineColor, renderDiffLines } from "../src/cli/diff-renderer.js";
 import { headerModel } from "../src/cli/header.js";
 import { helpPanelModel } from "../src/cli/help-panel.js";
-import { messageListItems } from "../src/cli/message-list.js";
+import { markdownLines, stripInlineMarkdown } from "../src/cli/markdown.js";
+import { messageListItems, transcriptItems } from "../src/cli/message-list.js";
 import { statusBarModel, statusBarParts } from "../src/cli/status-bar.js";
 import { getTheme, parseThemeMode } from "../src/cli/theme.js";
 import { groupToolEvents, toolTimelineHint } from "../src/cli/tool-timeline.js";
@@ -517,13 +519,13 @@ test("composer disabled state renders as waiting", () => {
   assert.deepEqual(composerState(false, 96), {
     prompt: ">  ",
     cursor: "_",
-    hint: "/help /exit /retry /debug /clip | arrows/history | ctrl+a/e/u/k/w",
+    hint: "/ opens commands | tab complete | enter run/send | arrows/history | ctrl+a/e/u/k/w",
     separator: "-".repeat(94)
   });
   assert.deepEqual(composerState(false, 50), {
     prompt: ">  ",
     cursor: "_",
-    hint: "/help /exit /clip | arrows edit",
+    hint: "/ opens commands | arrows edit",
     separator: "-".repeat(48)
   });
 });
@@ -642,6 +644,56 @@ test("message list hides empty assistant placeholder when idle", () => {
 
   assert.equal(items.length, 1);
   assert.equal(items[0]?.message.role, "user");
+});
+
+test("transcript items place tool calls inline with chat history", () => {
+  const items = transcriptItems(
+    [
+      { id: "user_1", role: "user", content: "inspect file", createdAt: "2026-01-01T00:00:00.000Z", turnId: "turn_1" },
+      {
+        id: "assistant_1",
+        role: "assistant",
+        content: "I'll inspect it.",
+        createdAt: "2026-01-01T00:00:01.000Z",
+        turnId: "turn_1",
+        toolCalls: [{ id: "tool_1", name: "read_file", arguments: "{\"path\":\"src/a.ts\"}" }]
+      },
+      {
+        id: "tool_message_1",
+        role: "tool",
+        content: JSON.stringify({ ok: true, tool: "read_file", output: { path: "src/a.ts", size: 12 } }),
+        createdAt: "2026-01-01T00:00:02.000Z",
+        turnId: "turn_1",
+        toolCallId: "tool_1"
+      },
+      { id: "assistant_2", role: "assistant", content: "Done.", createdAt: "2026-01-01T00:00:03.000Z", turnId: "turn_1" }
+    ],
+    [{ id: "tool_1", tool: "read_file", permission: "passive", status: "completed", args: { path: "src/a.ts" } }]
+  );
+
+  assert.deepEqual(items.map((item) => item.type), ["message", "message", "tool", "message"]);
+  assert.equal(items[2]?.type, "tool");
+  assert.equal(items[2]?.id, "tool_1");
+});
+
+test("markdown model strips visible markdown markers for terminal rendering", () => {
+  assert.equal(stripInlineMarkdown("**Done** with `src/app.ts`"), "Done with src/app.ts");
+  assert.deepEqual(
+    markdownLines(["### Files created:", "- `index.html` - **page**", "", "```ts", "const ok = true;", "```"].join("\n")),
+    [
+      { kind: "heading", level: 3, text: "Files created:" },
+      { kind: "list", text: "index.html - page" },
+      { kind: "blank", text: "" },
+      { kind: "code", text: "const ok = true;" }
+    ]
+  );
+});
+
+test("slash command menu filters commands from slash input", () => {
+  assert.deepEqual(slashCommandItems("hello"), []);
+  assert.deepEqual(slashCommandItems("/pl").map((item) => item.command), ["/plan"]);
+  assert.equal(slashCommandItems("/").some((item) => item.command === "/help"), true);
+  assert.equal(slashCommandItems("/").some((item) => item.command === "/act"), true);
 });
 
 test("mergeToolEvent replaces existing call state without changing order", () => {

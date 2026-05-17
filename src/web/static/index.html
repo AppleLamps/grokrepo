@@ -23,7 +23,10 @@
         <section class="chat" aria-label="Conversation">
           <div id="messages" class="messages"></div>
           <form id="composer" class="composer">
-            <textarea id="prompt" rows="3" placeholder="Ask GrokCode"></textarea>
+            <div class="composer-input">
+              <textarea id="prompt" rows="3" placeholder="Ask GrokCode"></textarea>
+              <div id="slashMenu" class="slash-menu" role="listbox" aria-label="Slash commands" hidden></div>
+            </div>
             <div class="composer-actions">
               <button id="retry" type="button">Retry</button>
               <button id="stop" type="button">Stop</button>
@@ -36,10 +39,6 @@
           <section>
             <h2>Approval</h2>
             <div id="approval" class="approval empty">No approval pending.</div>
-          </section>
-          <section>
-            <h2>Tools</h2>
-            <div id="tools" class="tools empty">No tool activity yet.</div>
           </section>
         </aside>
       </section>

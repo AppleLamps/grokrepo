@@ -44,7 +44,17 @@ test("web server serves static assets and state", async () => {
   try {
     const html = await fetch(`${handle.url}/`);
     assert.equal(html.status, 200);
-    assert.match(await html.text(), /GrokCode/);
+    const htmlBody = await html.text();
+    assert.match(htmlBody, /GrokCode/);
+    assert.match(htmlBody, /id="slashMenu"/);
+    assert.doesNotMatch(htmlBody, /id="tools"/);
+
+    const app = await fetch(`${handle.url}/app.js`);
+    assert.equal(app.status, 200);
+    const appBody = await app.text();
+    assert.match(appBody, /renderMarkdown/);
+    assert.match(appBody, /renderToolCard/);
+    assert.match(appBody, /handleSlashMenuKeydown/);
 
     const state = await fetch(`${handle.url}/api/state`);
     const body = await state.json() as { taskMode: string; busy: boolean; providerStatus: string };

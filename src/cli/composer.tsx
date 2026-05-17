@@ -28,10 +28,29 @@ interface HistoryState {
   value: string;
 }
 
+export interface SlashCommandItem {
+  command: string;
+  description: string;
+}
+
+export const SLASH_COMMANDS: SlashCommandItem[] = [
+  { command: "/help", description: "show terminal commands" },
+  { command: "/exit", description: "close GrokCode" },
+  { command: "/quit", description: "close GrokCode" },
+  { command: "/retry", description: "repeat the last prompt" },
+  { command: "/plan", description: "switch to planning mode" },
+  { command: "/act", description: "switch to implementation mode" },
+  { command: "/mode", description: "show current mode" },
+  { command: "/checkpoint", description: "create/list/restore checkpoints" },
+  { command: "/debug", description: "toggle recent debug logs" },
+  { command: "/clip", description: "capture clipboard image" },
+  { command: "/clipboard-image", description: "capture clipboard image" }
+];
+
 export function composerState(disabled: boolean, width = process.stdout.columns ?? 80): ComposerState {
   const enabledHint = width < 72
-    ? "/help /exit /clip | arrows edit"
-    : "/help /exit /retry /debug /clip | arrows/history | ctrl+a/e/u/k/w";
+    ? "/ opens commands | arrows edit"
+    : "/ opens commands | tab complete | enter run/send | arrows/history | ctrl+a/e/u/k/w";
 
   return {
     prompt: disabled ? "..." : ">  ",
@@ -147,12 +166,24 @@ export function moveCursor(state: EditableLineState, direction: "left" | "right"
   return { ...state, cursor: state.value.length };
 }
 
+export function slashCommandItems(value: string): SlashCommandItem[] {
+  const query = value.trim().toLowerCase();
+
+  if (!query.startsWith("/")) {
+    return [];
+  }
+
+  return SLASH_COMMANDS.filter((item) => item.command.startsWith(query));
+}
+
 export function Composer({ disabled, onSubmit, theme = getTheme("dark") }: ComposerProps) {
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>();
   const [historyDraft, setHistoryDraft] = useState("");
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
 
   function setLine(next: EditableLineState): void {
     setValue(next.value);
@@ -164,8 +195,58 @@ export function Composer({ disabled, onSubmit, theme = getTheme("dark") }: Compo
     setHistoryDraft("");
   }
 
+  function setEditedLine(next: EditableLineState): void {
+    setLine(next);
+    clearHistoryNavigation();
+    setSlashDismissed(false);
+    setSlashIndex(0);
+  }
+
+  function commitValue(nextValue: string): void {
+    const trimmed = nextValue.trim();
+
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    onSubmit(trimmed);
+    setHistory((current) => [...current.filter((entry) => entry !== trimmed), trimmed].slice(-50));
+    clearHistoryNavigation();
+    setSlashDismissed(false);
+    setSlashIndex(0);
+    setLine({ value: "", cursor: 0 });
+  }
+
   useInput((input, key) => {
     if (disabled) {
+      return;
+    }
+
+    const slashItems = slashDismissed ? [] : slashCommandItems(value);
+    const slashMenuVisible = value.startsWith("/") && slashItems.length > 0;
+    const selectedSlashItem = slashItems[Math.min(slashIndex, Math.max(0, slashItems.length - 1))];
+
+    if (slashMenuVisible && (key.upArrow || key.downArrow)) {
+      setSlashIndex((current) => {
+        const offset = key.upArrow ? -1 : 1;
+        return (current + offset + slashItems.length) % slashItems.length;
+      });
+      return;
+    }
+
+    if (slashMenuVisible && key.tab && selectedSlashItem) {
+      setLine({ value: selectedSlashItem.command, cursor: selectedSlashItem.command.length });
+      setSlashIndex(Math.min(slashIndex, slashItems.length - 1));
+      return;
+    }
+
+    if (slashMenuVisible && key.return && selectedSlashItem) {
+      commitValue(selectedSlashItem.command);
+      return;
+    }
+
+    if (slashMenuVisible && key.escape) {
+      setSlashDismissed(true);
       return;
     }
 
@@ -174,6 +255,8 @@ export function Composer({ disabled, onSubmit, theme = getTheme("dark") }: Compo
       setHistoryIndex(next.index);
       setHistoryDraft(next.draft);
       setLine({ value: next.value, cursor: next.value.length });
+      setSlashDismissed(false);
+      setSlashIndex(0);
       return;
     }
 
@@ -200,49 +283,44 @@ export function Composer({ disabled, onSubmit, theme = getTheme("dark") }: Compo
     if (key.ctrl && isCtrlInput(input, "u")) {
       setLine({ value: value.slice(cursor), cursor: 0 });
       clearHistoryNavigation();
+      setSlashDismissed(false);
+      setSlashIndex(0);
       return;
     }
 
     if (key.ctrl && isCtrlInput(input, "k")) {
       setLine({ value: value.slice(0, cursor), cursor });
       clearHistoryNavigation();
+      setSlashDismissed(false);
+      setSlashIndex(0);
       return;
     }
 
     if (key.ctrl && isCtrlInput(input, "w")) {
-      setLine(deleteWordBeforeCursor({ value, cursor }));
-      clearHistoryNavigation();
+      setEditedLine(deleteWordBeforeCursor({ value, cursor }));
       return;
     }
 
     if (key.return) {
-      const nextValue = value.trim();
-
-      if (nextValue.length > 0) {
-        onSubmit(nextValue);
-        setHistory((current) => [...current.filter((entry) => entry !== nextValue), nextValue].slice(-50));
-        clearHistoryNavigation();
-        setLine({ value: "", cursor: 0 });
-      }
-
+      commitValue(value);
       return;
     }
 
     if (key.backspace) {
-      setLine(removeBeforeCursor({ value, cursor }));
-      clearHistoryNavigation();
+      setEditedLine(removeBeforeCursor({ value, cursor }));
       return;
     }
 
     if (key.delete) {
-      setLine(removeAtCursor({ value, cursor }));
-      clearHistoryNavigation();
+      setEditedLine(removeAtCursor({ value, cursor }));
       return;
     }
 
     if (key.escape) {
       setLine({ value: "", cursor: 0 });
       clearHistoryNavigation();
+      setSlashDismissed(false);
+      setSlashIndex(0);
       return;
     }
 
@@ -252,9 +330,7 @@ export function Composer({ disabled, onSubmit, theme = getTheme("dark") }: Compo
       const nextValue = inserted.value.trim();
 
       if (nextValue.length > 0) {
-        onSubmit(nextValue);
-        setHistory((current) => [...current.filter((entry) => entry !== nextValue), nextValue].slice(-50));
-        clearHistoryNavigation();
+        commitValue(nextValue);
         const remainder = afterBreak.join("");
         setLine({ value: remainder, cursor: remainder.length });
       }
@@ -263,8 +339,7 @@ export function Composer({ disabled, onSubmit, theme = getTheme("dark") }: Compo
     }
 
     if (input && !key.ctrl && !key.meta) {
-      setLine(insertAtCursor({ value, cursor }, input));
-      clearHistoryNavigation();
+      setEditedLine(insertAtCursor({ value, cursor }, input));
     }
   });
 
@@ -273,10 +348,22 @@ export function Composer({ disabled, onSubmit, theme = getTheme("dark") }: Compo
   const beforeCursor = value.slice(0, safeCursor);
   const cursorCharacter = value[safeCursor] ?? " ";
   const afterCursor = value.slice(safeCursor + 1);
+  const menuItems = slashDismissed ? [] : slashCommandItems(value);
+  const menuVisible = !disabled && value.startsWith("/") && menuItems.length > 0;
+  const selectedIndex = Math.min(slashIndex, Math.max(0, menuItems.length - 1));
 
   return (
     <Box flexDirection="column">
       <Text color={theme.border}>{state.separator}</Text>
+      {menuVisible && (
+        <Box flexDirection="column" marginBottom={1}>
+          {menuItems.map((item, index) => (
+            <Text key={item.command} color={index === selectedIndex ? theme.accent : theme.muted} inverse={index === selectedIndex}>
+              {item.command}  {item.description}
+            </Text>
+          ))}
+        </Box>
+      )}
       <Box>
         <Text color={disabled ? theme.muted : theme.accent}>{state.prompt}</Text>
         <Text>{disabled ? value : beforeCursor}</Text>

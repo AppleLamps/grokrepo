@@ -10,7 +10,7 @@ import { DebugPanel } from "./debug-panel.js";
 import { HelpPanel } from "./help-panel.js";
 import { MessageList } from "./message-list.js";
 import { getTheme, type UiTheme } from "./theme.js";
-import { isExpandableSearchEvent, searchResultDetails, ToolTimeline } from "./tool-timeline.js";
+import { isExpandableSearchEvent, searchResultDetails } from "./tool-timeline.js";
 
 interface ChatOutputProps {
   messages: readonly SessionMessage[];
@@ -47,8 +47,13 @@ export function ChatOutput({
 }: ChatOutputProps) {
   return (
     <Box flexDirection="column" gap={theme.dense ? 0 : 1}>
-      <MessageList messages={messages} busy={busy} theme={theme} />
-      <ToolTimeline events={toolEvents} expandedToolEventIds={expandedToolEventIds} theme={theme} />
+      <MessageList
+        messages={messages}
+        toolEvents={toolEvents}
+        expandedToolEventIds={expandedToolEventIds}
+        busy={busy}
+        theme={theme}
+      />
       <ApprovalPanel pendingApproval={pendingApproval} selectedFiles={selectedApprovalFiles} theme={theme} />
       <DebugPanel entries={debugEntries} visible={debugVisible} theme={theme} />
       <HelpPanel visible={helpVisible} theme={theme} />
